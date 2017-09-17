@@ -1,9 +1,11 @@
 import logging.config
 
 import click
-
+import arrow
 from model import Base, engine, DBSession
-from scraper import next_to_go, get_results, model_results
+from predict import predictions
+from scraper import next_to_go, get_results
+from simulate import simulate
 
 logger = logging.getLogger(__name__)
 
@@ -32,31 +34,42 @@ cli.add_command(db)
 
 
 @click.command()
-@click.option('--simulate', is_flag=True, help='no real betting')
+@click.option('--oncely', is_flag=True, help='only run once')
+@click.option('--balance', help='current balance')
 @click.pass_context
-def bet(ctx, simulate):
+def watch(ctx, oncely, balance):
     debug = ctx.obj['debug']
-    logging.info('running scraping command')
-    next_to_go(debug, simulate)
-cli.add_command(bet)
+    logging.info('watching next to go command')
+    next_to_go(debug, oncely, balance)
+cli.add_command(watch)
 
 
 @click.command()
+@click.option('--lys', is_flag=True, help='list dates already scraped')
+@click.option('--dt', help='scrape this specific date')
+@click.option('--predict', is_flag=True, help='predict scraped results')
 @click.pass_context
-def results(ctx):
+def results(ctx, lys, dt, predict):
     debug = ctx.obj['debug']
-    logging.info('scraping results')
-    get_results(debug)
+    get_results(debug, lys, dt, predict)
 cli.add_command(results)
 
 
 @click.command()
+@click.option('--odds_only', is_flag=True, help='only update runners odds')
 @click.pass_context
-def model(ctx):
+def predict(ctx, odds_only):
     debug = ctx.obj['debug']
-    logging.info('model results')
-    model_results(debug)
-cli.add_command(model)
+    predictions(debug, odds_only)
+cli.add_command(predict)
+
+
+@click.command()
+@click.pass_context
+def sim(ctx):
+    debug = ctx.obj['debug']
+    simulate(debug)
+cli.add_command(sim)
 
 
 if __name__ == '__main__':

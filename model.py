@@ -26,6 +26,8 @@ DBSession = sessionmaker(bind=engine, autocommit=False, autoflush=True)
 # revert all of them back to the last commit by calling
 # session.rollback()
 
+db_session = DBSession()
+
 
 class Form(Base):
     __tablename__ = 'form'
@@ -124,7 +126,6 @@ class Race(Base):
 
 def save_race(race):
     logger.info('Saving race...')
-    db_session = DBSession()
 
     # get existing row
     sql = db_session.query(Race).filter(
@@ -167,7 +168,16 @@ def save_race(race):
 
 def load_races():
     logger.info('Loading races...')
-    db_session = DBSession()
 
     sql = db_session.query(Race)
     return sql.all()
+
+
+def list_race_dates():
+    """list all dates"""
+    return db_session.query(Race.meeting_date).distinct()
+
+
+def delete_race(id_):
+    """list all dates"""
+    return db_session.query(Race).filter(Race.id == id_).delete()

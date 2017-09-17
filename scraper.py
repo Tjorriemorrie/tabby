@@ -1,238 +1,101 @@
-from operator import attrgetter, itemgetter
 import json
 import logging
 import time
-from os import path
 
 import arrow
 import numpy as np
 import requests
-from collections import Counter
-from keras.models import load_model
 from sqlalchemy.orm.exc import NoResultFound
 from terminaltables import SingleTable
 
-from model import Race, save_race, load_races
-from predict import predict
+from model import Race, save_race, list_race_dates
+from predict import add_predictions, add_scaled_odds, add_probabilities
+from simulate import bet_positive_odds
 
 logger = logging.getLogger(__name__)
 
-
-FILE_NEXT_TO_GO = path.join(path.dirname(path.abspath(__file__)), 'next_to_go.pkl')
-
-# returns a compiled model
-# identical to the previous one
-model_default = None
 
 # race data
 data = {}
 
 
-def next_to_go(debug, simulate):
+def next_to_go(debug, oncely, balance):
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
+    balance = balance or 1000
     logger.info('next to go!')
 
-    model_default = load_model('model_default.h5')
-
     # infinitely get next to go
+    bet_chunk = balance * 0.05
     while True:
-        bet_amount = 40
 
         update_races()
-        race = get_next_race()
-        race['status'] = 'betting'
-        wait_for_next(race)
+        next_race = get_next_race()
+        next_race['status'] = 'betting'
 
-        # get latest race odds
-        details = get_details(race)
-        if not details['willHaveFixedOdds'] or not details['fixedOddsOnlineBetting']:
-            race['status'] = 'no odds'
-            logger.warning('No fixed odds for {}'.format(details['raceName']))
+        # skip the woofies and harnessies
+        if next_race['meeting']['raceType'] not in  ['R']:
+            logger.info('skipping {}'.format(next_race['meeting']['meetingName']))
             continue
 
-        # save forms training data
-        forms = get_forms(race)
-        persist_forms(race, forms)
+        if not oncely:
+            wait_for_next(next_race)
+
+        # get latest race odds
+        details = get_details(next_race)
 
         # refresh latest odds
-        wait_for_update(details)
-        details = get_details(race)
+        if not oncely:
+            wait_for_update(details)
 
-        # runners odds
-        add_predictions(details)
-        add_probabilities(details)
+        # update details (aka runners odds)
+        details = get_details(next_race)
+        runners = details['runners']
 
-        # get results
+        # add probability (do not delete or skip keyerrors here)
+        add_scaled_odds(runners)
+        add_predictions(runners, next_race['meeting']['raceType'])
+        add_probabilities(runners)
 
+        # add bet
+        runners, num_bets = bet_positive_odds(runners, bet_chunk)
 
         race_table = [['Type', 'Meeting', 'Race', '#', 'Start Time', 'status']]
-        for race in list(data.values())[:-20]:
-            race_table.append([
-                race['meeting']['raceType'],
-                race['meeting']['meetingName'],
-                race['raceName'],
-                race['raceNumber'],
-                race['raceStartTime'].humanize(),
-                race['status']
-            ])
+        cnt = 0
+        for race in list(data.values()):
+            if race['status'] == 'upcoming':
+                cnt += 1
+                race_table.append([
+                    race['meeting']['raceType'],
+                    race['meeting']['meetingName'],
+                    race['raceName'],
+                    race['raceNumber'],
+                    race['raceStartTime'].humanize(),
+                    race['status']
+                ])
+            if cnt > 6:
+                break
         print('\n')
         print(SingleTable(race_table, title='Races').table)
 
-        runner_table = [['#', 'Name', 'Prob', 'Take', 'Odds']]
-        for runner in details['runners']:
+        runner_table = [['Name', 'Fixed', 'Tote', '#', 'Prob', 'Bet', 'PP']]
+        for runner in runners:
+            pp = runner['bet'] * max(runner['odds_fwin'], runner['odds_twin']) - bet_chunk
             runner_table.append([
-                runner['runnerNumber'],
                 runner['runnerName'],
+                '{} - {:.0f}%'.format(runner['odds_fwin'], runner['odds_fscale'] * 100),
+                '{} - {:.0f}%'.format(runner['odds_twin'], runner['odds_tscale'] * 100),
+                runner['runnerNumber'],
                 '{:.0f}%'.format(runner['probability'] * 100),
-                runner['odds_taken'],
-                '{:.0f}%'.format(runner['odds'] * 100),
+                runner['bet'] and '{:.2f}'.format(runner['bet']) or '-',
+                '{:.2f}'.format(pp),
             ])
         print('\n')
-        print(SingleTable(runner_table, title='{} {} {}'.format(
-            race['meeting']['meetingName'], race['raceName'], race['raceNumber'])).table)
+        print(SingleTable(runner_table, title='{} {}'.format(
+            next_race['meeting']['meetingName'], next_race['raceNumber'])).table)
 
-        return
-
-
-def add_probabilities(details):
-    # get total
-    total = sum([r['prediction'] for r in details['runners']])
-    logger.debug('total prediction = {}'.format(total))
-
-    # scale predictions
-    for runner in details['runners']:
-        runner['probability'] = runner['prediction'] / total
-        logger.debug('prob = {}'.format(runner['probability']))
-        if not runner['probability'] or not runner['fixedOdds']['returnWin']:
-            runner['odds_taken'] = 'out'
-            runner['odds'] = 0
-            continue
-
-        # is odds favourable?
-        odds = 1 / runner['fixedOdds']['returnWin']
-        odds_taken = 'fixed'
-        if runner['parimutuel']['bettingStatus'] == 'Open':
-            tote_odds = 1 / runner['parimutuel']['returnWin']
-            if tote_odds > odds:
-                odds_taken = 'tote'
-                odds = tote_odds
-        runner['odds_taken'] = odds_taken
-        runner['odds'] = odds
-
-def add_predictions(details):
-    # select specific model
-    model = model_default
-    race_type = details['meeting']['raceType']
-
-    # get num runners
-    num_runners = sum([r['fixedOdds']['bettingStatus'] == 'Open' for r in details['runners']])
-    logger.debug('{} runners'.format(num_runners))
-
-    # make prediction for each runner separately
-    for runner in details['runners']:
-        prediction = 0
-        if runner['fixedOdds']['bettingStatus'] == 'Open':
-            data = [(runner['fixedOdds']['returnWin'], num_runners)]
-            logger.debug('data = {}'.format(data))
-            preds = model.predict(np.array(data))
-            prediction = sum(preds[0])
-        elif runner['fixedOdds']['bettingStatus'] == 'LateScratched':
-            logger.debug('runner scratched')
-        else:
-            raise ValueError('unknown status {}'.format(runner['fixedOdds']['bettingStatus']))
-        runner['prediction'] = prediction
-        logger.debug('prediction = {}'.format(runner['prediction']))
-
-    # {
-    #     "_links": {
-    #         "form": "https://api.beta.tab.com.au/v1/tab-info-service/racing/dates/2017-09-12/meetings/G/GOS/races/7/form/1?jurisdiction=NSW"
-    #     },
-    #     "barrierNumber": 1,
-    #     "blinkers": false,
-    #     "claimAmount": 0,
-    #     "dfsFormRating": 96,
-    #     "earlySpeedRating": 87,
-    #     "earlySpeedRatingBand": "LEADER",
-    #     "emergency": false,
-    #     "fixedOdds": {
-    #         "allowPlace": true,
-    #         "bettingStatus": "Open",
-    #         "differential": null,
-    #         "flucs": [
-    #             {
-    #                 "returnWin": 2.6,
-    #                 "returnWinTime": "2017-09-12T10:38:45.000Z"
-    #             },
-    #             {
-    #                 "returnWin": 2.7,
-    #                 "returnWinTime": "2017-09-12T10:35:26.000Z"
-    #             },
-    #             {
-    #                 "returnWin": 2.8,
-    #                 "returnWinTime": "2017-09-12T07:57:21.000Z"
-    #             }
-    #         ],
-    #         "isFavouritePlace": true,
-    #         "isFavouriteWin": true,
-    #         "percentageChange": 4,
-    #         "propositionNumber": 165951,
-    #         "returnPlace": 1.3,
-    #         "returnWin": 2.7,
-    #         "returnWinOpen": 2.8,
-    #         "returnWinOpenDaily": 2.8,
-    #         "returnWinTime": "2017-09-12T10:48:05.000Z"
-    #     },
-    #     "handicapWeight": 0,
-    #     "harnessHandicap": null,
-    #     "last5Starts": "43341",
-    #     "parimutuel": {
-    #         "bettingStatus": "Open",
-    #         "isFavouritePlace": false,
-    #         "isFavouriteWin": false,
-    #         "marketMovers": [
-    #             {
-    #                 "returnWin": 4.2,
-    #                 "returnWinTime": "2017-09-12T10:52:24.000Z",
-    #                 "specialDisplayIndicator": false
-    #             },
-    #             {
-    #                 "returnWin": 4.5,
-    #                 "returnWinTime": "2017-09-12T10:51:44.000Z",
-    #                 "specialDisplayIndicator": false
-    #             },
-    #             {
-    #                 "returnWin": 4.4,
-    #                 "returnWinTime": "2017-09-12T10:50:38.000Z",
-    #                 "specialDisplayIndicator": false
-    #             },
-    #             {
-    #                 "returnWin": 3.8,
-    #                 "returnWinTime": "2017-09-12T10:49:41.000Z",
-    #                 "specialDisplayIndicator": false
-    #             },
-    #             {
-    #                 "returnWin": 5.2,
-    #                 "returnWinTime": "2017-09-12T10:39:39.000Z",
-    #                 "specialDisplayIndicator": true
-    #             }
-    #         ],
-    #         "percentageChange": -17,
-    #         "returnPlace": 1.3,
-    #         "returnWin": 3.5
-    #     },
-    #     "penalty": 0,
-    #     "riderDriverFullName": null,
-    #     "riderDriverName": "",
-    #     "runnerName": "LIBERTY LEE",
-    #     "runnerNumber": 1,
-    #     "silkURL": "https://api.beta.tab.com.au/v1/tab-info-service/racing/silk/1",
-    #     "tcdwIndicators": "TCD",
-    #     "techFormRating": 0,
-    #     "totalRatingPoints": 17,
-    #     "trainerFullName": "BETTY KEENE",
-    #     "trainerName": "B Keene"
-    # },
-
+        if oncely:
+            return
+        time.sleep(15)
 
 
 def update_races():
@@ -244,45 +107,8 @@ def update_races():
     races = res['races']
     logger.debug('{} races scraped'.format(len(races)))
 
-    # race types
-    # race['meeting']['raceType'] can be R, G, H
-    # race_types = Counter()
-    # for race in races:
-    #     race_types.update(race['meeting']['raceType'])
-    # logger.info('Race types: {}'.format(race_types.most_common()))
-    #     print(json.dumps(race, indent=4, default=str))
-    # {
-    #     "raceStartTime": "2017-09-12T07:34:00.000Z",
-    #     "raceNumber": 6,
-    #     "raceName": "CORDINA CHICKENS PACE MS",
-    #     "raceDistance": 1609,
-    #     "broadcastChannel": "Sky Racing 1",
-    #     "broadcastChannels": [
-    #         "Sky Racing 1"
-    #     ],
-    #     "meeting": {
-    #         "sellCode": {
-    #             "meetingCode": "S",
-    #             "scheduledType": "H"
-    #         },
-    #         "raceType": "H",
-    #         "meetingName": "MENANGLE",
-    #         "location": "NSW",
-    #         "weatherCondition": "FINE",
-    #         "trackCondition": "FAST",
-    #         "railPosition": null,
-    #         "venueMnemonic": "MEN",
-    #         "meetingDate": "2017-09-12"
-    #     },
-    #     "_links": {
-    #         "self": "https://api.beta.tab.com.au/v1/tab-info-service/racing/dates/2017-09-12/meetings/H/MEN/races/6?jurisdiction=NSW",
-    #         "form": "https://api.beta.tab.com.au/v1/tab-info-service/racing/dates/2017-09-12/meetings/H/MEN/races/6/form?jurisdiction=NSW",
-    #         "bigBets": "https://api.beta.tab.com.au/v1/tab-info-service/racing/dates/2017-09-12/meetings/H/MEN/races/6/big-bets?jurisdiction=NSW"
-    #     }
-    # }
-
     for race in races:
-        key = '{}_{}'.format(race['raceName'], race['raceNumber'])
+        key = '{}_{}'.format(race['meeting']['meetingName'], race['raceNumber'])
         if key not in data:
             logger.debug('adding {} to data'.format(key))
             race['raceStartTime'] = arrow.get(race['raceStartTime'])
@@ -296,51 +122,48 @@ def get_next_race():
     start = None
     for key, race in data.items():
         if race['status'] == 'upcoming':
+            # logger.debug('next race? {} R{} {}'.format(
+            #     race['meeting']['meetingName'], race['raceNumber'], race['raceStartTime']))
             if next_race is None:
                 next_race = race
                 start = race['raceStartTime']
             elif race['raceStartTime'] < start:
                 next_race = race
                 start = race['raceStartTime']
-    logger.debug('next race {} start at {}'.format(next_race['raceName'], start))
-
-    # if not saved_meeting:
-    #     res = requests.get(new_race['_links']['self'])
-    #     res.raise_for_status()
-    #     res = res.json()
-    #     print(json.dumps(res, indent=4, default=str, sort_keys=True))
-    #     with open(FILE_NEXT_TO_GO, 'wb') as f:
-    #         pickle.dump(res, f)
-    #     saved_meeting = True
+    logger.info('next race {} R{} start at {}'.format(
+        next_race['meeting']['meetingName'], next_race['raceNumber'], start))
     return next_race
 
 
 def wait_for_next(race):
+    """Wait for the next race to be close to starting"""
+    logger.info('Waiting on {} {}'.format(race['meeting']['meetingName'], race['raceNumber']))
     logger.debug('next start time {}'.format(race['raceStartTime']))
-    now_one_min = arrow.utcnow().shift(minutes=1)
-    logger.debug('now one min {}'.format(now_one_min))
-    time_to_sleep = race['raceStartTime'] - now_one_min
-    logger.debug('time to sleep {} (or {}s)'.format(time_to_sleep, time_to_sleep.total_seconds()))
-    # time.sleep(max(0, time_to_sleep.total_seconds()))
+    while True:
+        time_to_sleep = race['raceStartTime'] - arrow.utcnow().shift(seconds=30)
+        logger.debug('time to sleep {} (or {:.0f}s)'.format(time_to_sleep, time_to_sleep.total_seconds()))
+        if time_to_sleep.total_seconds() < 0:
+            break
+        time.sleep(min(30, time_to_sleep.total_seconds()))
 
 
 def get_details(race):
+    """Get details (aka runners) for race"""
     # runners
     res = requests.get(race['_links']['self'])
     res.raise_for_status()
     res = res.json()
-    print(json.dumps(res, indent=4, default=str, sort_keys=True))
-    # raise Exception('what is out of race look like?')
+    # print(json.dumps(res, indent=4, default=str, sort_keys=True))
+    # raise Exception('get_details')
     return res
 
 
 def wait_for_update(details):
+    """Wait on next update of fixed odds"""
     details['fixedOddsUpdateTime'] = arrow.get(details['fixedOddsUpdateTime'])
-    logger.debug('next update time {}'.format(details['fixedOddsUpdateTime']))
-    now_one_sec = arrow.utcnow().shift(seconds=1)
-    logger.debug('now one sec {}'.format(now_one_sec))
-    time_to_sleep = details['fixedOddsUpdateTime'] - now_one_sec
-    logger.debug('time to sleep {} (or {}s)'.format(time_to_sleep, time_to_sleep.total_seconds()))
+    logger.debug('next fixed odds update time {}'.format(details['fixedOddsUpdateTime']))
+    time_to_sleep = details['fixedOddsUpdateTime'] - arrow.utcnow()
+    logger.debug('time to sleep {} (or {:.0f}s)'.format(time_to_sleep, time_to_sleep.total_seconds()))
     time.sleep(max(0, time_to_sleep.total_seconds()))
 
 
@@ -351,6 +174,8 @@ def get_forms(race):
     res = res.json()
     forms = res['form']
     logger.info('{} runners'.format(len(forms)))
+    # print(json.dumps(forms, indent=4, default=str, sort_keys=True))
+    # raise Exception('')
     return forms
 
 
@@ -479,21 +304,31 @@ def persist_forms(race, forms):
 # scrape history results
 ####################################################################################
 
-def get_results(debug):
+def get_results(debug, lys, dt_target, predict):
     """scrape yesterday results and predict and save it"""
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
     logger.info('get results!')
 
+    # list result dates
+    if lys:
+        for dt in list_race_dates():
+            logger.info('Date: {}'.format(dt))
+        return
+
+    dt_target = dt_target and arrow.get(dt_target) or arrow.now().shift(days=-1)
+    logger.debug(f'Date target = {dt_target}')
+
     # scrape yesterday's races
-    yesterday = arrow.now().shift(days=-1)
-    url = 'https://api.beta.tab.com.au/v1/historical-results-service/NSW/racing/{}'.format(yesterday.format('YYYY-MM-DD'))
+    url = 'https://api.beta.tab.com.au/v1/historical-results-service/NSW/racing/{}'.format(
+        dt_target.format('YYYY-MM-DD'))
     logger.info('Scraping {}'.format(url))
 
     meetings = requests.get(url)
     meetings.raise_for_status()
     meetings = meetings.json()
     logger.info('Found {} results'.format(len(meetings)))
-    # print(json.dumps(res, indent=4, default=str, sort_keys=True))
+    # print(json.dumps(meetings, indent=4, default=str, sort_keys=True))
+    # raise Exception('')
 
     for meeting in meetings['meetings']:
         logger.info('Processing meeting {}'.format(meeting['meetingName']))
@@ -506,254 +341,155 @@ def get_results(debug):
             race = requests.get(url)
             race.raise_for_status()
             race = race.json()
-            # print(json.dumps(res, indent=4, default=str, sort_keys=True))
+            # print(json.dumps(race, indent=4, default=str, sort_keys=True))
+            # raise Exception('')
 
+            runners = race['runners']
             try:
-                predict(race)
-            except KeyError as e:
+                add_scaled_odds(runners)
+                if predict and race['meeting']['raceType'] == 'R':
+                    race['num_runners'] = add_predictions(runners, race['meeting']['raceType'])
+                    add_probabilities(runners)
+            except (KeyError, ZeroDivisionError) as e:
                 logger.error(e)
-                continue
-
-            save_race(race)
+            else:
+                save_race(race)
 
 
 ####################################################################################
-# betting
+# meeting
 ####################################################################################
 
-def bet_positive_odds(runners, bet_chunk):
-    """calculate amount to bet"""
-    logger.info('betting chunk = {}'.format(bet_chunk))
-
-    # total (only of runners we are betting on)
-    all_odds_scaled = [r['odds_scaled'] for r in runners
-                       if r['probability'] > r['odds_scaled']]
-    num_bets = len(all_odds_scaled)
-    total = sum(all_odds_scaled)
-    logger.debug('{} total odds for bets {}'.format(num_bets, total))
-
-    for runner in runners:
-        # default bet to 0 (for all)
-        runner['bet'] = 0
-        # make bet
-        if runner['probability'] > runner['odds_scaled']:
-            runner['bet'] = runner['odds_scaled'] / total * bet_chunk
-        logger.debug('#{} bet = {:.2f} (odds={:.2f} prob={:.2f})'.format(
-            runner['runnerNumber'], runner['bet'], runner['odds_scaled'], runner['probability']))
-
-    return runners, num_bets
-
-
-def dutching(runners, bet_chunk):
-    """calculate amount to bet using normal dutching"""
-    logger.info('betting chunk = {}'.format(bet_chunk))
-
-    # drop scratched
-    runners = [r for r in runners if r['odds_best']]
-
-    # sort runners from favourite to underdog
-    runners.sort(key=itemgetter('odds_scaled'), reverse=True)
-    logger.info('runners are sorted {}'.format(
-        [(r['runnerNumber'], round(r['probability'], 2), round(r['odds_scaled'], 2)) for r in runners]))
-
-    # start betting on all and cut off worse runner till positive outcome
-    for num_bets in range(len(runners), 0, -1):
-        logger.info('Spread on {} runners'.format(num_bets))
-
-        # reset bets for all
-        for runner in runners:
-            runner['bet'] = 0
-
-        pool = runners[:num_bets]
-        logger.info('{} in pool'.format(len(pool)))
-
-        # all odds
-        total = sum([r['odds_scaled'] for r in pool])
-        logger.info('total odds {}'.format(total))
-
-        # dutch for all in pool (scaled is only from fixedOdds)
-        for runner in pool:
-            runner['bet'] = runner['odds_scaled'] / total * bet_chunk
-            profit = runner['bet'] * runner['odds_best'] - bet_chunk
-            logger.debug('#{} bet = {:.2f} (best={} scale={:.2f} prob={:.2f} profit={:.2f})'.format(
-                runner['runnerNumber'], runner['bet'], runner['odds_best'],
-                runner['odds_scaled'], runner['probability'], profit))
-
-        # exit when profitable
-        if profit > 0:
-            logger.info('profitable!')
-            break
-        else:
-            logger.info('nope, try again!')
-
-    return pool, num_bets
+# race types
+# race['meeting']['raceType'] can be R, G, H
+# race_types = Counter()
+# for race in races:
+#     race_types.update(race['meeting']['raceType'])
+# logger.info('Race types: {}'.format(race_types.most_common()))
+#     print(json.dumps(race, indent=4, default=str))
+# {
+#     "raceStartTime": "2017-09-12T07:34:00.000Z",
+#     "raceNumber": 6,
+#     "raceName": "CORDINA CHICKENS PACE MS",
+#     "raceDistance": 1609,
+#     "broadcastChannel": "Sky Racing 1",
+#     "broadcastChannels": [
+#         "Sky Racing 1"
+#     ],
+#     "meeting": {
+#         "sellCode": {
+#             "meetingCode": "S",
+#             "scheduledType": "H"
+#         },
+#         "raceType": "H",
+#         "meetingName": "MENANGLE",
+#         "location": "NSW",
+#         "weatherCondition": "FINE",
+#         "trackCondition": "FAST",
+#         "railPosition": null,
+#         "venueMnemonic": "MEN",
+#         "meetingDate": "2017-09-12"
+#     },
+#     "_links": {
+#         "self": "https://api.beta.tab.com.au/v1/tab-info-service/racing/dates/2017-09-12/meetings/H/MEN/races/6?jurisdiction=NSW",
+#         "form": "https://api.beta.tab.com.au/v1/tab-info-service/racing/dates/2017-09-12/meetings/H/MEN/races/6/form?jurisdiction=NSW",
+#         "bigBets": "https://api.beta.tab.com.au/v1/tab-info-service/racing/dates/2017-09-12/meetings/H/MEN/races/6/big-bets?jurisdiction=NSW"
+#     }
+# }
 
 
-def dutching_reverse(runners, bet_chunk):
-    """calculate amount to bet using normal dutching but drop worst diff"""
-    logger.info('betting chunk = {}'.format(bet_chunk))
+####################################################################################
+# runner
+####################################################################################
 
-    # drop scratched
-    runners = [r for r in runners if r['odds_best']]
-
-    # sort runners from best to worst odds
-    runners.sort(key=lambda r: r['probability'] - r['odds_scaled'], reverse=True)
-    logger.info('runners are sorted {}'.format(
-        [(r['runnerNumber'], round(r['probability'], 2), round(r['odds_scaled'], 2)) for r in runners]))
-
-    # start betting on all and cut off worse runner till positive outcome
-    for num_bets in range(len(runners), 0, -1):
-        logger.info('Spread on {} runners'.format(num_bets))
-
-        # reset bets for all
-        for runner in runners:
-            runner['bet'] = 0
-
-        pool = runners[:num_bets]
-        logger.info('{} in pool'.format(len(pool)))
-
-        # all odds
-        total = sum([r['odds_scaled'] for r in pool])
-        logger.info('total odds {}'.format(total))
-
-        # dutch for all in pool (scaled is only from fixedOdds)
-        for runner in pool:
-            runner['bet'] = runner['odds_scaled'] / total * bet_chunk
-            logger.debug('#{} bet = {:.2f} (odds={:.2f} prob={:.2f})'.format(
-                runner['runnerNumber'], runner['bet'], runner['odds_scaled'], runner['probability']))
-
-        # exit when profitable
-        profit = pool[0]['bet'] * pool[0]['odds_best'] - bet_chunk
-        logger.info('profit currently at {} ({} * {} - {})'.format(
-            profit, pool[0]['bet'], pool[0]['odds_best'], bet_chunk))
-        if profit > 0:
-            logger.info('profitable!')
-            break
-        else:
-            logger.info('nope, try again!')
-
-    return pool, num_bets
-
-
-def dutching_fav(runners, bet_chunk):
-    """calculate amount to bet using normal dutching but drop favourite"""
-    logger.info('betting chunk = {}'.format(bet_chunk))
-
-    # drop scratched
-    runners = [r for r in runners if r['odds_best']]
-
-    # sort runners from best to worst odds
-    runners.sort(key=itemgetter('odds_scaled'))
-    logger.info('runners are sorted {}'.format(
-        [(r['runnerNumber'], round(r['probability'], 2), round(r['odds_scaled'], 2)) for r in runners]))
-
-    # start betting on all and cut off worse runner till positive outcome
-    for num_bets in range(len(runners), 0, -1):
-        logger.info('Spread on {} runners'.format(num_bets))
-
-        # reset bets for all
-        for runner in runners:
-            runner['bet'] = 0
-
-        pool = runners[:num_bets]
-        logger.info('{} in pool'.format(len(pool)))
-
-        # all odds
-        total = sum([r['odds_scaled'] for r in pool])
-        logger.info('total odds {}'.format(total))
-
-        # dutch for all in pool (scaled is only from fixedOdds)
-        for runner in pool:
-            runner['bet'] = runner['odds_scaled'] / total * bet_chunk
-            profit = runner['bet'] * runner['odds_best'] - bet_chunk
-            logger.debug('#{} bet = {:.2f} (best={} scale={:.2f} prob={:.2f} profit={:.2f})'.format(
-                runner['runnerNumber'], runner['bet'], runner['odds_best'],
-                runner['odds_scaled'], runner['probability'], profit))
-
-        # exit when profitable
-        if profit > 0:
-            logger.info('profitable!')
-            break
-        else:
-            logger.info('nope, try again!')
-
-    return pool, num_bets
-
-
-def bet_results(book, runners, results, bet_chunk, num_bets, num_runners):
-    winner = int(results[0][0])
-    logger.info('winner = {}'.format(winner))
-    ranked = None
-    outcome = {
-        'success': False,
-        'profit': -bet_chunk,
-        'num_bets': num_bets,
-        'num_runners': num_runners,
-    }
-    for i, runner in enumerate(runners):
-        # logger.debug('betted {} on {}'.format(runner['bet'], runner['runnerNumber']))
-        if int(runner['runnerNumber']) == winner:
-            ranked = num_runners - i
-            if runner['bet']:
-                profit = runner['bet'] * runner['odds_best'] - bet_chunk
-                logger.warning('you win {:.0f}!'.format(profit))
-                outcome = {
-                    'success': True,
-                    'profit': profit,
-                    'num_bets': num_bets,
-                    'num_runners': num_runners,
-                }
-            break
-
-    # added where runners is thinned and winner is not in runners
-    if not outcome['success']:
-        logger.error('you lose {:.0f}!'.format(bet_chunk))
-
-    outcome['ranked'] = ranked
-    book.append(outcome)
+    # {
+#     "_links": {
+#         "form": "https://api.beta.tab.com.au/v1/tab-info-service/racing/dates/2017-09-12/meetings/G/GOS/races/7/form/1?jurisdiction=NSW"
+#     },
+#     "barrierNumber": 1,
+#     "blinkers": false,
+#     "claimAmount": 0,
+#     "dfsFormRating": 96,
+#     "earlySpeedRating": 87,
+#     "earlySpeedRatingBand": "LEADER",
+#     "emergency": false,
+#     "fixedOdds": {
+#         "allowPlace": true,
+#         "bettingStatus": "Open",
+#         "differential": null,
+#         "flucs": [
+#             {
+#                 "returnWin": 2.6,
+#                 "returnWinTime": "2017-09-12T10:38:45.000Z"
+#             },
+#             {
+#                 "returnWin": 2.7,
+#                 "returnWinTime": "2017-09-12T10:35:26.000Z"
+#             },
+#             {
+#                 "returnWin": 2.8,
+#                 "returnWinTime": "2017-09-12T07:57:21.000Z"
+#             }
+#         ],
+#         "isFavouritePlace": true,
+#         "isFavouriteWin": true,
+#         "percentageChange": 4,
+#         "propositionNumber": 165951,
+#         "returnPlace": 1.3,
+#         "returnWin": 2.7,
+#         "returnWinOpen": 2.8,
+#         "returnWinOpenDaily": 2.8,
+#         "returnWinTime": "2017-09-12T10:48:05.000Z"
+#     },
+#     "handicapWeight": 0,
+#     "harnessHandicap": null,
+#     "last5Starts": "43341",
+#     "parimutuel": {
+#         "bettingStatus": "Open",
+#         "isFavouritePlace": false,
+#         "isFavouriteWin": false,
+#         "marketMovers": [
+#             {
+#                 "returnWin": 4.2,
+#                 "returnWinTime": "2017-09-12T10:52:24.000Z",
+#                 "specialDisplayIndicator": false
+#             },
+#             {
+#                 "returnWin": 4.5,
+#                 "returnWinTime": "2017-09-12T10:51:44.000Z",
+#                 "specialDisplayIndicator": false
+#             },
+#             {
+#                 "returnWin": 4.4,
+#                 "returnWinTime": "2017-09-12T10:50:38.000Z",
+#                 "specialDisplayIndicator": false
+#             },
+#             {
+#                 "returnWin": 3.8,
+#                 "returnWinTime": "2017-09-12T10:49:41.000Z",
+#                 "specialDisplayIndicator": false
+#             },
+#             {
+#                 "returnWin": 5.2,
+#                 "returnWinTime": "2017-09-12T10:39:39.000Z",
+#                 "specialDisplayIndicator": true
+#             }
+#         ],
+#         "percentageChange": -17,
+#         "returnPlace": 1.3,
+#         "returnWin": 3.5
+#     },
+#     "penalty": 0,
+#     "riderDriverFullName": null,
+#     "riderDriverName": "",
+#     "runnerName": "LIBERTY LEE",
+#     "runnerNumber": 1,
+#     "silkURL": "https://api.beta.tab.com.au/v1/tab-info-service/racing/silk/1",
+#     "tcdwIndicators": "TCD",
+#     "techFormRating": 0,
+#     "totalRatingPoints": 17,
+#     "trainerFullName": "BETTY KEENE",
+#     "trainerName": "B Keene"
+# },
 
 
-def model_results(debug):
-    """model results for best betting pattern"""
-    logger.setLevel(logging.DEBUG if debug else logging.INFO)
-    logger.info('model results!')
-    balance = 1000
-
-    races = load_races()
-    logger.info('Loaded {} races...'.format(len(races)))
-
-    for strategy in [dutching]:  # dutching_fav]:  #dutching_reverse]: #bet_positive_odds
-        input('continue...')
-        book = []
-        for race in races:
-            if race.race_type != 'R':
-                continue
-                
-            bet_chunk = balance * 0.05
-            runners = race.get_runners()
-            # print(json.dumps(runners, indent=4, default=str, sort_keys=True))
-            # return
-            runners, num_bets = strategy(runners, bet_chunk)
-            bet_results(book, runners, race.get_results(), bet_chunk, num_bets, race.num_runners)
-            # break
-
-        logger.info('{}'.format(strategy.__name__))
-
-        # races
-        logger.info('Races: {}'.format(len(book)))
-
-        # nums
-        c = Counter('{}/{}'.format(o['num_bets'], o['num_runners']) for o in book)
-        logger.info('Num bets common = {}'.format(c.most_common(5)))
-
-        # success
-        success_ratio = sum([o['success'] for o in book]) / len(book)
-        logger.info('Success = {:.0f}%'.format(success_ratio * 100))
-
-        # profit
-        profits = sum([o['profit'] for o in book])
-        logger.info('Profits = {:.0f}'.format(profits))
-
-        # ranks
-        r = Counter(o['ranked'] for o in book)
-        logger.info('ranked = {}'.format(r.most_common()))

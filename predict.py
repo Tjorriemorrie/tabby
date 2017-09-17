@@ -1,87 +1,144 @@
+import json
 import logging
 
 import numpy as np
 from keras.models import load_model
 
+from model import load_races, delete_race, db_session
+
 logger = logging.getLogger(__name__)
 
+STATUSES = {'Open', 'LateScratched', 'Placing', 'Loser', 'Winner', 'Normal', 'Closed'}
 
-# returns a compiled model
-# identical to the previous one
-model_default = load_model('model_default.h5')
-
-
-STATUSES = {'Open', 'LateScratched', 'Placing', 'Loser', 'Winner', 'Normal'}
-
-
-def predict(race):
-    logger.info('predicting race...')
-    add_predictions(race)
-    add_probabilities(race)
-    add_scaled_odds(race)
+# models for every type of racing
+MODELS = {
+    'G': load_model('models/i5p_40x40x40x40.h5'),
+    'H': load_model('models/i5p_40x40x40x40.h5'),
+    'R': load_model('models/R30x30.h5'),
+}
 
 
-def add_predictions(race):
-    # select specific model
-    model = model_default
+def predictions(debug, odds_only):
+    """main method to update predictions in db"""
+    logger.setLevel(logging.DEBUG if debug else logging.INFO)
 
-    race_type = race['meeting']['raceType']
+    races = load_races()
+    logger.info('predicting on {} races...'.format(len(races)))
 
-    # get num runners
-    num_runners = sum(is_good_status(r) for r in race['runners'])
-    logger.info('{} runners'.format(num_runners))
-    race['num_runners'] = num_runners
+    for i, race in enumerate(races):
+        logger.info('Predicting race {} {}'.format(race.meeting_name, race.meeting_date))
 
-    # make prediction for each runner separately
-    for runner in race['runners']:
-        prediction = 0
-        if is_good_status(runner):
-            data = [(runner['fixedOdds']['returnWin'], num_runners)]
-            logger.debug('data = {}'.format(data))
-            preds = model.predict(np.array(data))
-            prediction = sum(preds[0])
+        # skip non-racing
+        if race.race_type != 'R':
+            continue
+
+        runners = race.get_runners()
+
+        # shared with watching
+        try:
+            add_scaled_odds(runners)
+            if not odds_only:
+                race.num_runners = add_predictions(runners, race.race_type)
+                add_probabilities(runners)
+        except KeyError as e:
+            logger.error(e)
+            raise
+            # delete_race(race.id)
         else:
+            logger.info(f'{i/len(races)*100:.1f}% completed')
+            race.set_runners(runners)
+
+    logger.info('saving...')
+    db_session.commit()
+
+
+def add_scaled_odds(runners):
+    """add odds for fixed and perimutuel"""
+    # convert decimal odds to percentages
+    # print(json.dumps(runners[0], indent=4, default=str, sort_keys=True))
+    # raise Exception('')
+
+    # get odds listing for ranking
+    all_odds = sorted([r['fixedOdds']['returnWin'] for r in runners if r['fixedOdds']['returnWin'] > 0])
+
+    for runner in runners:
+
+        # best odds for betting
+        runner['odds_win'] = runner['fixedOdds']['returnWin']
+
+        if not runner['odds_win']:
+            runner['rank_win'] = len(runners)
+            runner['odds_perc'] = 0
+            continue
+
+        # add runner rank
+        runner['rank_win'] = all_odds.index(runner['odds_win']) + 1
+
+        # odds for scaling
+        runner['odds_perc'] = 1 / runner['odds_win']
+        logger.debug('#{} odds {:.2f} => perc {:.2f}'.format(
+            runner['runnerNumber'], runner['odds_win'], runner['odds_perc']))
+
+    # get total (scratched has 0 for win)
+    total = sum([r['odds_perc'] for r in runners])
+    logger.debug('total {:.2f}'.format(total))
+
+    # scale it
+    for runner in runners:
+        runner['odds_scale'] = runner['odds_perc'] / total
+        logger.debug('#{} perc {:.2f} => scale {:.2f}'.format(
+            runner['runnerNumber'], runner['odds_perc'], runner['odds_scale']))
+
+        # for k in ['odds_fwin', 'odds_twin',
+        #           'odds_fwin', 'odds_twin',
+        #           'odds_fperc', 'odds_tperc',
+        #           'rank_fwin', 'rank_twin',
+        #           'odds_fscale', 'odds_tscale']:
+        #     runner.pop(k, None)
+
+
+def add_predictions(runners, race_type):
+    """xp xs xr xn"""
+    # model
+    mdl = MODELS[race_type]
+
+    # xn
+    xn = sum(is_good_status(r) for r in runners)
+
+    for runner in runners:
+        prediction = 0
+
+        if not is_good_status(runner):
             logger.debug('runner scratched')
+        else:
+            # get data
+            x = [(runner['odds_perc'], runner['odds_scale'], runner['rank_win'], xn)]
+            # make prediction on data
+            preds = mdl.predict(np.array(x))
+            prediction = sum(preds[0])
+            logger.debug('#{} prediction: {:.2f} from {}'.format(runner['runnerNumber'], prediction, x))
         runner['prediction'] = prediction
-        logger.info('prediction = {}'.format(prediction))
+
+    # return num_runners
+    return xn
 
 
-def add_probabilities(race):
+def add_probabilities(runners):
+    """convert predictions to probabilities"""
     # get total (scratched has 0 for prediction)
-    total = sum([r['prediction'] for r in race['runners']])
+    total = sum([r['prediction'] for r in runners])
     logger.info('total prediction = {}'.format(total))
 
     # scale predictions
-    for runner in race['runners']:
-        runner['probability'] = runner['prediction'] / total
-        logger.debug('prob = {}'.format(runner['probability']))
+    for runner in runners:
+        probability = runner['prediction'] / total
+        runner['probability'] = probability
+        if runner['prediction']:
+            logger.info('#{} probability: {:.2f}'.format(runner['runnerNumber'], probability))
 
 
-def add_scaled_odds(race):
-    # convert decimal odds to percentages
-    for runner in race['runners']:
-
-        # best odds for betting
-        runner['odds_best'] = max([runner['fixedOdds']['returnWin'], runner['parimutuel']['returnWin']])
-
-        # fixed odds for scaling
-        runner['odds_perc'] = runner['fixedOdds']['returnWin'] and 1 / runner['fixedOdds']['returnWin']
-        logger.info('Percentaged odds {:.2f} => {:.2f}'.format(runner['fixedOdds']['returnWin'], runner['odds_perc']))
-
-    # get total (scratched has 0 for win)
-    total = sum([r['odds_perc'] for r in race['runners']])
-    logger.info('total odds_perc = {:.2f}'.format(total))
-
-    # scale it
-    for runner in race['runners']:
-        runner['odds_scaled'] = runner['odds_perc'] / total
-        logger.info('Scaled odds {:.2f} => {:.2f}'.format(runner['odds_perc'], runner['odds_scaled']))
-
-
-def is_good_status(runner, tote=False):
+def is_good_status(runner):
     status = runner['fixedOdds']['bettingStatus']
-    if tote:
-        status = runner['parimutuel']['bettingStatus']
     if status not in STATUSES:
         raise ValueError('unknown status {}'.format(status))
     return status not in ['LateScratched']
