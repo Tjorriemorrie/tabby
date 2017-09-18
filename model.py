@@ -175,7 +175,7 @@ def load_races():
 
 def list_race_dates():
     """list all dates"""
-    return db_session.query(Race.meeting_date).distinct()
+    return db_session.query(Race.meeting_date).order_by(Race.meeting_date.desc()).distinct()
 
 
 def delete_race(id_):

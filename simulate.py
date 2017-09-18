@@ -76,36 +76,61 @@ def simulate(debug):
 
 
 def bet_results(book, runners, num_runners, bet_chunk, num_bets, race_type):
-    num_runners = num_runners
-    ranked = None
+    win_diff = 0
+    max_diff = 0
     outcome = {
-        'success': False,
+        'success': 0,
         'profit': -bet_chunk,
         'num_bets': num_bets,
         'num_runners': num_runners,
     }
     for i, runner in enumerate(runners):
-        logger.debug('#{} bet: {} with odds {}'.format(runner['runnerNumber'], runner['bet'], runner['odds_win']))
+        diff = abs(runner['odds_scale'] - runner['probability'])
+        max_diff = max(max_diff, diff)
         if int(runner['finishingPosition']) == 1:
-            ranked = num_runners - i
+            win_diff = diff
             if runner['bet'] > 0:
-                profit = runner['bet'] * runner['odds_win'] - bet_chunk
-                logger.warning('you win {:.0f}!'.format(profit))
+                # odds = runner['parimutuel']['returnWin'] if runner['parimutuel']['returnWin'] else runner['odds_win']
+                odds = runner['odds_win']
+                profit = runner['bet'] * odds - bet_chunk
                 outcome = {
-                    'success': True,
+                    'success': 1,
                     'profit': profit,
                     'num_bets': num_bets,
                     'num_runners': num_runners,
                 }
             break
 
-    # added where runners is thinned and winner is not in runners
-    if not outcome['success']:
-        logger.error('you lose {:.0f}!'.format(bet_chunk))
-
-    outcome['ranked'] = ranked
+    outcome['max_diff'] = max_diff
+    outcome['win_diff'] = win_diff
+    outcome['bet_chunk'] = bet_chunk
     outcome['race_type'] = race_type
+    outcome['runners'] = runners
     book.append(outcome)
+
+
+def bet_positive_max(runners, bet_chunk):
+    """bet max given prob>scale"""
+
+    num_runners = sum(r['odds_win'] > 0 for r in runners)
+    max_diff = max(r['probability'] - r['odds_scale'] for r in runners)
+
+    for runner in runners:
+        runner['bet'] = 0
+        if runner['probability'] - runner['odds_scale'] == max_diff:
+            runner['bet'] = bet_chunk
+
+    num_bets = sum(r['bet'] > 0 for r in runners)
+
+    if num_bets > 2:
+        logger.warning('# of bets more than 2, has {}'.format(num_bets))
+        return [], 0
+
+    if num_bets / num_runners < 0.125:
+        logger.warning('ratio of bets per runners less than 12.5%, has {:.0f}'.format(num_bets / num_runners * 100))
+        return [], 0
+
+    return runners, num_bets
 
 
 def bet_positive_odds(runners, bet_chunk):

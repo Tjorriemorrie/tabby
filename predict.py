@@ -52,6 +52,11 @@ def predictions(debug, odds_only):
     db_session.commit()
 
 
+def bettable(r):
+    """is runner bettable"""
+    return r['probability'] > r['odds_scale'] and r['odds_win'] > 0
+
+
 def add_scaled_odds(runners):
     """add odds for fixed and perimutuel"""
     # convert decimal odds to percentages
@@ -85,7 +90,7 @@ def add_scaled_odds(runners):
 
     # scale it
     for runner in runners:
-        runner['odds_scale'] = runner['odds_perc'] / total
+        runner['odds_scale'] = total and runner['odds_perc'] / total
         logger.debug('#{} perc {:.2f} => scale {:.2f}'.format(
             runner['runnerNumber'], runner['odds_perc'], runner['odds_scale']))
 
@@ -135,6 +140,11 @@ def add_probabilities(runners):
         runner['probability'] = probability
         if runner['prediction']:
             logger.info('#{} probability: {:.2f}'.format(runner['runnerNumber'], probability))
+
+    # total probability must be 1
+    total_prob = sum(r['probability'] for r in runners)
+    if round(total_prob, 2) != 1.00:
+        raise ValueError('Probability must be 1, has {}'.format(total_prob))
 
 
 def is_good_status(runner):

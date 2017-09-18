@@ -10,7 +10,7 @@ from terminaltables import SingleTable
 
 from model import Race, save_race, list_race_dates
 from predict import add_predictions, add_scaled_odds, add_probabilities
-from simulate import bet_positive_odds
+from simulate import bet_positive_odds, bet_positive_max
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def next_to_go(debug, oncely, balance):
     logger.info('next to go!')
 
     # infinitely get next to go
-    bet_chunk = balance * 0.05
+    bet_chunk = balance * 0.01
     while True:
 
         update_races()
@@ -57,7 +57,7 @@ def next_to_go(debug, oncely, balance):
         add_probabilities(runners)
 
         # add bet
-        runners, num_bets = bet_positive_odds(runners, bet_chunk)
+        runners, num_bets = bet_positive_max(runners, bet_chunk)
 
         race_table = [['Type', 'Meeting', 'Race', '#', 'Start Time', 'status']]
         cnt = 0
@@ -77,13 +77,12 @@ def next_to_go(debug, oncely, balance):
         print('\n')
         print(SingleTable(race_table, title='Races').table)
 
-        runner_table = [['Name', 'Fixed', 'Tote', '#', 'Prob', 'Bet', 'PP']]
+        runner_table = [['Name', 'Fixed', '#', 'Prob', 'Bet', 'PP']]
         for runner in runners:
-            pp = runner['bet'] * max(runner['odds_fwin'], runner['odds_twin']) - bet_chunk
+            pp = runner['bet'] * runner['odds_win'] - bet_chunk
             runner_table.append([
                 runner['runnerName'],
-                '{} - {:.0f}%'.format(runner['odds_fwin'], runner['odds_fscale'] * 100),
-                '{} - {:.0f}%'.format(runner['odds_twin'], runner['odds_tscale'] * 100),
+                '{} - {:.0f}%'.format(runner['odds_win'], runner['odds_scale'] * 100),
                 runner['runnerNumber'],
                 '{:.0f}%'.format(runner['probability'] * 100),
                 runner['bet'] and '{:.2f}'.format(runner['bet']) or '-',
