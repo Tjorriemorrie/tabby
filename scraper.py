@@ -9,8 +9,8 @@ from sqlalchemy.orm.exc import NoResultFound
 from terminaltables import SingleTable
 
 from model import Race, save_race, list_race_dates
-from predict import add_predictions, add_scaled_odds, add_probabilities
-from simulate import bet_positive_odds, bet_positive_max
+from predict import add_predictions, add_scaled_odds, add_probabilities, NoRunnersError
+from simulate import bet_positive_odds, bet_positive_max, bet_positive_dutch
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +53,19 @@ def next_to_go(debug, oncely, balance):
 
         # add probability (do not delete or skip keyerrors here)
         add_scaled_odds(runners)
-        add_predictions(runners, next_race['meeting']['raceType'])
+        try:
+            add_predictions(runners, next_race['meeting']['raceType'])
+        except NoRunnersError:
+            logger.warning('No runners for {}'.format(details['meeting']['meetingName']))
+            continue
         add_probabilities(runners)
 
         # add bet
-        runners, num_bets = bet_positive_max(runners, bet_chunk)
+        runners, num_bets = bet_positive_dutch(runners, bet_chunk)
+        if not runners:
+            logger.warning('No bettable runners on {} {}'.format(
+                details['meeting']['meetingName'], details['raceNumber']))
+            continue
 
         race_table = [['Type', 'Meeting', 'Race', '#', 'Start Time', 'status']]
         cnt = 0

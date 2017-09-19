@@ -45,7 +45,7 @@ cli.add_command(watch)
 
 
 @click.command()
-@click.option('--lys', is_flag=True, help='list dates already scraped')
+@click.option('--list',  is_flag=True, help='list dates already scraped')
 @click.option('--dt', help='scrape this specific date')
 @click.option('--predict', is_flag=True, help='predict scraped results')
 @click.pass_context
@@ -57,10 +57,13 @@ cli.add_command(results)
 
 @click.command()
 @click.option('--odds_only', is_flag=True, help='only update runners odds')
+@click.option('-R', 'category', flag_value='R', default=True)
+@click.option('-G', 'category', flag_value='G')
+@click.option('-H', 'category', flag_value='H')
 @click.pass_context
-def predict(ctx, odds_only):
+def predict(ctx, odds_only, category):
     debug = ctx.obj['debug']
-    predictions(debug, odds_only)
+    predictions(debug, odds_only, category)
 cli.add_command(predict)
 
 

@@ -12,13 +12,17 @@ STATUSES = {'Open', 'LateScratched', 'Placing', 'Loser', 'Winner', 'Normal', 'Cl
 
 # models for every type of racing
 MODELS = {
-    'G': load_model('models/i5p_40x40x40x40.h5'),
+    'G': load_model('models/G30x30.h5'),
     'H': load_model('models/i5p_40x40x40x40.h5'),
     'R': load_model('models/R30x30.h5'),
 }
 
 
-def predictions(debug, odds_only):
+class NoRunnersError(Exception):
+    pass
+
+
+def predictions(debug, odds_only, category):
     """main method to update predictions in db"""
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
 
@@ -29,7 +33,7 @@ def predictions(debug, odds_only):
         logger.info('Predicting race {} {}'.format(race.meeting_name, race.meeting_date))
 
         # skip non-racing
-        if race.race_type != 'R':
+        if race.race_type != category:
             continue
 
         runners = race.get_runners()
@@ -41,8 +45,9 @@ def predictions(debug, odds_only):
                 race.num_runners = add_predictions(runners, race.race_type)
                 add_probabilities(runners)
         except KeyError as e:
-            logger.error(e)
+            print(json.dumps(runners, indent=4, default=str, sort_keys=True))
             raise
+            # logger.error(e)
             # delete_race(race.id)
         else:
             logger.info(f'{i/len(races)*100:.1f}% completed')
@@ -94,12 +99,12 @@ def add_scaled_odds(runners):
         logger.debug('#{} perc {:.2f} => scale {:.2f}'.format(
             runner['runnerNumber'], runner['odds_perc'], runner['odds_scale']))
 
-        # for k in ['odds_fwin', 'odds_twin',
-        #           'odds_fwin', 'odds_twin',
-        #           'odds_fperc', 'odds_tperc',
-        #           'rank_fwin', 'rank_twin',
-        #           'odds_fscale', 'odds_tscale']:
-        #     runner.pop(k, None)
+        for k in ['odds_fwin', 'odds_twin',
+                  'odds_fwin', 'odds_twin',
+                  'odds_fperc', 'odds_tperc',
+                  'rank_fwin', 'rank_twin',
+                  'odds_fscale', 'odds_tscale']:
+            runner.pop(k, None)
 
 
 def add_predictions(runners, race_type):
@@ -108,12 +113,15 @@ def add_predictions(runners, race_type):
     mdl = MODELS[race_type]
 
     # xn
-    xn = sum(is_good_status(r) for r in runners)
+    xn = len([r for r in runners if r['odds_win']])
+    if not xn:
+        # print(json.dumps(runners, indent=4, default=str, sort_keys=True))
+        raise NoRunnersError()
 
     for runner in runners:
         prediction = 0
 
-        if not is_good_status(runner):
+        if not runner['odds_win']:
             logger.debug('runner scratched')
         else:
             # get data
@@ -150,5 +158,6 @@ def add_probabilities(runners):
 def is_good_status(runner):
     status = runner['fixedOdds']['bettingStatus']
     if status not in STATUSES:
+        print(json.dumps(runner, indent=4, default=str, sort_keys=True))
         raise ValueError('unknown status {}'.format(status))
-    return status not in ['LateScratched']
+    return status not in ['LateScratched', 'Reserve']
