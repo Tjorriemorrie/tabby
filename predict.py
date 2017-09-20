@@ -69,7 +69,8 @@ def add_scaled_odds(runners):
     # raise Exception('')
 
     # get odds listing for ranking
-    all_odds = sorted([r['fixedOdds']['returnWin'] for r in runners if r['fixedOdds']['returnWin'] > 0])
+    all_odds = sorted([r['fixedOdds']['returnWin'] for r in runners
+                       if r['fixedOdds']['returnWin'] and r['fixedOdds']['returnWin'] > 0])
 
     for runner in runners:
 

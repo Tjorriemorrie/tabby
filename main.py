@@ -4,7 +4,7 @@ import click
 import arrow
 from model import Base, engine, DBSession
 from predict import predictions
-from scraper import next_to_go, get_results
+from scraper import next_to_go, scrape_history
 from simulate import simulate
 
 logger = logging.getLogger(__name__)
@@ -45,14 +45,14 @@ cli.add_command(watch)
 
 
 @click.command()
-@click.option('--list',  is_flag=True, help='list dates already scraped')
+@click.option('--list', 'lst', is_flag=True, help='list dates already scraped')
 @click.option('--dt', help='scrape this specific date')
-@click.option('--predict', is_flag=True, help='predict scraped results')
+@click.option('--predict', '-p', multiple=True, type=click.Choice(['G', 'H', 'R']))
 @click.pass_context
-def results(ctx, lys, dt, predict):
+def scrape(ctx, lst, dt, predict):
     debug = ctx.obj['debug']
-    get_results(debug, lys, dt, predict)
-cli.add_command(results)
+    scrape_history(debug, lst, dt, predict)
+cli.add_command(scrape)
 
 
 @click.command()

@@ -3,14 +3,13 @@ import logging
 import time
 
 import arrow
-import numpy as np
 import requests
 from sqlalchemy.orm.exc import NoResultFound
 from terminaltables import SingleTable
 
 from model import Race, save_race, list_race_dates
 from predict import add_predictions, add_scaled_odds, add_probabilities, NoRunnersError
-from simulate import bet_positive_odds, bet_positive_max, bet_positive_dutch
+from simulate import bet_positive_dutch_R, bet_positive_dutch_G
 
 logger = logging.getLogger(__name__)
 
@@ -33,19 +32,23 @@ def next_to_go(debug, oncely, balance):
         next_race['status'] = 'betting'
 
         # skip the woofies and harnessies
-        if next_race['meeting']['raceType'] not in  ['R']:
+        if next_race['meeting']['raceType'] not in ['R', 'G']:
             logger.info('skipping {}'.format(next_race['meeting']['meetingName']))
             continue
 
         if not oncely:
-            wait_for_next(next_race)
+            try:
+                wait_for_next(next_race)
+            except KeyError as e:
+                logger.error(e)
+                continue
 
         # get latest race odds
         details = get_details(next_race)
 
         # refresh latest odds
-        if not oncely:
-            wait_for_update(details)
+        # if not oncely:
+        #     wait_for_update(details)
 
         # update details (aka runners odds)
         details = get_details(next_race)
@@ -60,8 +63,17 @@ def next_to_go(debug, oncely, balance):
             continue
         add_probabilities(runners)
 
+        # drop scratched
+        runners = [r for r in runners if r['odds_win']]
+        if not runners:
+            continue
+
         # add bet
-        runners, num_bets = bet_positive_dutch(runners, bet_chunk)
+        if next_race['meeting']['raceType'] == 'R':
+            runners, num_bets = bet_positive_dutch_R(runners, bet_chunk)
+        elif next_race['meeting']['raceType'] == 'G':
+            runners, num_bets = bet_positive_dutch_G(runners, bet_chunk)
+
         if not runners:
             logger.warning('No bettable runners on {} {}'.format(
                 details['meeting']['meetingName'], details['raceNumber']))
@@ -97,8 +109,8 @@ def next_to_go(debug, oncely, balance):
                 '{:.2f}'.format(pp),
             ])
         print('\n')
-        print(SingleTable(runner_table, title='{} {}'.format(
-            next_race['meeting']['meetingName'], next_race['raceNumber'])).table)
+        print(SingleTable(runner_table, title='Bet now on {} {} {}'.format(
+            next_race['meeting']['raceType'], next_race['meeting']['meetingName'], next_race['raceNumber'])).table)
 
         if oncely:
             return
@@ -311,13 +323,13 @@ def persist_forms(race, forms):
 # scrape history results
 ####################################################################################
 
-def get_results(debug, lys, dt_target, predict):
+def scrape_history(debug, lst, dt_target, predict):
     """scrape yesterday results and predict and save it"""
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
     logger.info('get results!')
 
     # list result dates
-    if lys:
+    if lst:
         for dt in list_race_dates():
             logger.info('Date: {}'.format(dt))
         return
@@ -354,7 +366,7 @@ def get_results(debug, lys, dt_target, predict):
             runners = race['runners']
             try:
                 add_scaled_odds(runners)
-                if predict and race['meeting']['raceType'] == 'R':
+                if race['meeting']['raceType'] in predict:
                     race['num_runners'] = add_predictions(runners, race['meeting']['raceType'])
                     add_probabilities(runners)
             except (KeyError, ZeroDivisionError) as e:

@@ -207,7 +207,7 @@ def scale_positive_odds(runners, bet_chunk):
     return pool, num_bets
 
 
-def bet_positive_dutch(runners, bet_chunk):
+def bet_positive_dutch_R(runners, bet_chunk):
     """dutch betting on probability"""
 
     # sort runners from favourite to underdog
@@ -216,7 +216,7 @@ def bet_positive_dutch(runners, bet_chunk):
     # runners.sort(key=itemgetter('probability'), reverse=True)
     ###############################################################################################
     # -7% roi 68% wr 100% races
-    runners.sort(key=lambda r: r['probability'] - r['odds_scale'], reverse=True)
+    runners.sort(key=lambda r: r['probability'] / r['odds_scale'], reverse=True)
     ###############################################################################################
 
     # start betting on all and cut off worse runner till positive outcome
@@ -232,6 +232,8 @@ def bet_positive_dutch(runners, bet_chunk):
 
         # all odds
         total_probs = sum([r['probability'] for r in pool])
+        if not total_probs:
+            return [], 0
         #         total_scale = sum([r['odds_scale'] for r in pool])
         # print('total probability = {}'.format(total))
 
@@ -310,6 +312,101 @@ def bet_positive_dutch(runners, bet_chunk):
                 break
 
     # print(json.dumps(runners, indent=4, default=str, sort_keys=True))
+    return runners, num_bets
+
+
+def bet_positive_dutch_G(runners, bet_chunk):
+    """dutch betting on probability"""
+
+    # sort runners from favourite to underdog
+    runners.sort(key=lambda r: r['probability'] / r['odds_scale'], reverse=True)
+
+    # start betting on all and cut off worse runner till positive outcome
+    for num_bets in range(len(runners), 0, -1):
+
+        # reset bets
+        for runner in runners:
+            runner['bet'] = 0
+
+        # recreate smaller pool
+        pool = runners[:num_bets]
+        # print('pool is {} from {} bets'.format(len(pool), num_bets))
+
+        # all prediction values
+        total_preds = sum([r['prediction'] for r in pool])
+        if not total_preds:
+            return [], 0
+
+        # dutch for all in pool
+        profits = []
+        prob2scales = []
+        for runner in pool:
+            # scale bet according to prediction
+            runner['bet'] = bet_chunk * runner['prediction'] / total_preds
+
+            # need to check all as we scale to probs and not odds
+            profits.append(runner['bet'] * runner['odds_win'] - bet_chunk)
+            prob2scales.append(runner['probability'] / runner['odds_scale'])
+
+        ###################################################################################
+        num_bets_flag = False
+        min_bets = 1
+        max_bets = 99
+        if min_bets <= num_bets <= max_bets:
+            num_bets_flag = True
+
+        ###################################################################################
+        # MIN PROFIT
+        ###################################################################################
+        min_profit_flag = False
+        min_profit = min(profits)
+        # 6.8  18  1691
+        # if min_profit > bet_chunk * 0:
+        # 7.7  17  1679
+        # if min_profit > bet_chunk * 0.5:
+        # 10.7  15  1655
+        if min_profit > bet_chunk * 1:
+            # 10.7  14  1645
+            # if min_profit > bet_chunk * 1.5:
+            # 10.6  13  1598
+            # if min_profit > bet_chunk * 2:
+            # 11.4  12  1485
+            # if min_profit > bet_chunk * 2.5:
+            min_profit_flag = True
+
+        ###################################################################################
+        # MIN PROB 2 SCALE
+        ###################################################################################
+        min_probs2scale_flag = False
+        min_probs2scale = min(prob2scales)
+        # 8.4  10  1475
+        # if min_probs2scale >= 1.105:
+        # 8.7  10  1415
+        # if min_probs2scale >= 1.1070:
+        # 9.2  15  1676
+        # if min_probs2scale >= 1.1075:
+        # 10.7  15  1655
+        if min_probs2scale >= 1.1080:
+            # 9.4  15  1639
+            # if min_probs2scale >= 1.1085:
+            # 9.4  10  1360
+            # if min_probs2scale >= 1.1090:
+            min_probs2scale_flag = True
+
+        if min_profit_flag and num_bets_flag and min_probs2scale_flag:
+            # print('breaking: {} {} {} {}'.format(min_profit_flag, avg_profit_flag, num_bets_flag, min_probs2scale_flag))
+            break
+    else:
+        #         print('no profit determined')
+        return [], 0
+
+    # put bets from pool into runners
+    for p in pool:
+        for r in runners:
+            if r['runnerNumber'] == p['runnerNumber']:
+                r['bet'] = p['bet']
+                break
+
     return runners, num_bets
 
 
