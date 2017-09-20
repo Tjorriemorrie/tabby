@@ -50,7 +50,7 @@ def predictions(debug, odds_only, category):
             # logger.error(e)
             # delete_race(race.id)
         else:
-            logger.info(f'{i/len(races)*100:.1f}% completed')
+            logger.info('{:.1f}% completed'.format(i / len(races) * 100))
             race.set_runners(runners)
 
     logger.info('saving...')

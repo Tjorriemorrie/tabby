@@ -8,3 +8,5 @@ keras-tqdm
 terminaltables
 arrow
 seaborn
+tensorflow
+seaborn
