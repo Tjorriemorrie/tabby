@@ -9,7 +9,7 @@ from terminaltables import SingleTable
 
 from model import Race, save_race, list_race_dates
 from predict import add_predictions, add_scaled_odds, add_probabilities, NoRunnersError
-from simulate import bet_positive_dutch_R, bet_positive_dutch_G
+from simulate import bet_positive_dutch_R, bet_positive_dutch
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,8 @@ def next_to_go(debug, oncely, balance):
         if next_race['meeting']['raceType'] == 'R':
             runners, num_bets = bet_positive_dutch_R(runners, bet_chunk)
         elif next_race['meeting']['raceType'] == 'G':
-            runners, num_bets = bet_positive_dutch_G(runners, bet_chunk)
+            x = [2.34375000e-05, 1.16268092e+00]
+            runners, num_bets = bet_positive_dutch(runners, bet_chunk, x)
 
         if not runners:
             logger.warning('No bettable runners on {} {}'.format(

@@ -13,7 +13,7 @@ STATUSES = {'Open', 'LateScratched', 'Placing', 'Loser', 'Winner', 'Normal', 'Cl
 # models for every type of racing
 MODELS = {
     'G': load_model('models/G30x30.h5'),
-    'H': load_model('models/i5p_40x40x40x40.h5'),
+    'H': load_model('models/H30x30.h5'),
     'R': load_model('models/R30x30.h5'),
 }
 
@@ -45,10 +45,10 @@ def predictions(debug, odds_only, category):
                 race.num_runners = add_predictions(runners, race.race_type)
                 add_probabilities(runners)
         except KeyError as e:
-            print(json.dumps(runners, indent=4, default=str, sort_keys=True))
-            raise
-            # logger.error(e)
-            # delete_race(race.id)
+            # print(json.dumps(runners, indent=4, default=str, sort_keys=True))
+            # raise
+            logger.error(e)
+            delete_race(race.id)
         else:
             logger.info('{:.1f}% completed'.format(i / len(races) * 100))
             race.set_runners(runners)

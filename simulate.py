@@ -315,11 +315,11 @@ def bet_positive_dutch_R(runners, bet_chunk):
     return runners, num_bets
 
 
-def bet_positive_dutch_G(runners, bet_chunk):
+def bet_positive_dutch(runners, bet_chunk, x):
     """dutch betting on probability"""
 
     # sort runners from favourite to underdog
-    runners.sort(key=lambda r: r['probability'] / r['odds_scale'], reverse=True)
+    runners.sort(key=lambda r: r['prediction'], reverse=True)
 
     # start betting on all and cut off worse runner till positive outcome
     for num_bets in range(len(runners), 0, -1):
@@ -334,8 +334,6 @@ def bet_positive_dutch_G(runners, bet_chunk):
 
         # all prediction values
         total_preds = sum([r['prediction'] for r in pool])
-        if not total_preds:
-            return [], 0
 
         # dutch for all in pool
         profits = []
@@ -350,9 +348,7 @@ def bet_positive_dutch_G(runners, bet_chunk):
 
         ###################################################################################
         num_bets_flag = False
-        min_bets = 1
-        max_bets = 99
-        if min_bets <= num_bets <= max_bets:
+        if num_bets >= 0:
             num_bets_flag = True
 
         ###################################################################################
@@ -360,18 +356,7 @@ def bet_positive_dutch_G(runners, bet_chunk):
         ###################################################################################
         min_profit_flag = False
         min_profit = min(profits)
-        # 6.8  18  1691
-        # if min_profit > bet_chunk * 0:
-        # 7.7  17  1679
-        # if min_profit > bet_chunk * 0.5:
-        # 10.7  15  1655
-        if min_profit > bet_chunk * 1:
-            # 10.7  14  1645
-            # if min_profit > bet_chunk * 1.5:
-            # 10.6  13  1598
-            # if min_profit > bet_chunk * 2:
-            # 11.4  12  1485
-            # if min_profit > bet_chunk * 2.5:
+        if min_profit > bet_chunk * x[0]:
             min_profit_flag = True
 
         ###################################################################################
@@ -379,21 +364,10 @@ def bet_positive_dutch_G(runners, bet_chunk):
         ###################################################################################
         min_probs2scale_flag = False
         min_probs2scale = min(prob2scales)
-        # 8.4  10  1475
-        # if min_probs2scale >= 1.105:
-        # 8.7  10  1415
-        # if min_probs2scale >= 1.1070:
-        # 9.2  15  1676
-        # if min_probs2scale >= 1.1075:
-        # 10.7  15  1655
-        if min_probs2scale >= 1.1080:
-            # 9.4  15  1639
-            # if min_probs2scale >= 1.1085:
-            # 9.4  10  1360
-            # if min_probs2scale >= 1.1090:
+        if min_probs2scale >= x[1]:
             min_probs2scale_flag = True
 
-        if min_profit_flag and num_bets_flag and min_probs2scale_flag:
+        if num_bets_flag and min_profit_flag and min_probs2scale_flag:
             # print('breaking: {} {} {} {}'.format(min_profit_flag, avg_profit_flag, num_bets_flag, min_probs2scale_flag))
             break
     else:
@@ -408,137 +382,3 @@ def bet_positive_dutch_G(runners, bet_chunk):
                 break
 
     return runners, num_bets
-
-
-def dutching_reverse(runners, bet_chunk):
-    """calculate amount to bet using normal dutching but drop worst diff"""
-    logger.info('betting chunk = {}'.format(bet_chunk))
-
-    # drop scratched
-    runners = [r for r in runners if r['odds_win']]
-
-    # sort runners from best to worst odds
-    runners.sort(key=lambda r: r['probability'] - r['odds_scaled'], reverse=True)
-    logger.info('runners are sorted {}'.format(
-        [(r['runnerNumber'], round(r['probability'], 2), round(r['odds_scaled'], 2)) for r in runners]))
-
-    # start betting on all and cut off worse runner till positive outcome
-    for num_bets in range(len(runners), 0, -1):
-        logger.info('Spread on {} runners'.format(num_bets))
-
-        # reset bets for all
-        for runner in runners:
-            runner['bet'] = 0
-
-        pool = runners[:num_bets]
-        logger.info('{} in pool'.format(len(pool)))
-
-        # all odds
-        total = sum([r['odds_scaled'] for r in pool])
-        logger.info('total odds {}'.format(total))
-
-        # dutch for all in pool (scaled is only from fixedOdds)
-        for runner in pool:
-            runner['bet'] = runner['odds_scaled'] / total * bet_chunk
-            logger.debug('#{} bet = {:.2f} (odds={:.2f} prob={:.2f})'.format(
-                runner['runnerNumber'], runner['bet'], runner['odds_scaled'], runner['probability']))
-
-        # exit when profitable
-        profit = pool[0]['bet'] * pool[0]['odds_win'] - bet_chunk
-        logger.info('profit currently at {} ({} * {} - {})'.format(
-            profit, pool[0]['bet'], pool[0]['odds_win'], bet_chunk))
-        if profit > 0:
-            logger.info('profitable!')
-            break
-        else:
-            logger.info('nope, try again!')
-
-    return pool, num_bets
-
-
-def dutching_fav(runners, bet_chunk):
-    """calculate amount to bet using normal dutching but drop favourite"""
-    logger.info('betting chunk = {}'.format(bet_chunk))
-
-    # drop scratched
-    runners = [r for r in runners if r['odds_win']]
-
-    # sort runners from best to worst odds
-    runners.sort(key=itemgetter('odds_scaled'))
-    logger.info('runners are sorted {}'.format(
-        [(r['runnerNumber'], round(r['probability'], 2), round(r['odds_scaled'], 2)) for r in runners]))
-
-    # start betting on all and cut off worse runner till positive outcome
-    for num_bets in range(len(runners), 0, -1):
-        logger.info('Spread on {} runners'.format(num_bets))
-
-        # reset bets for all
-        for runner in runners:
-            runner['bet'] = 0
-
-        pool = runners[:num_bets]
-        logger.info('{} in pool'.format(len(pool)))
-
-        # all odds
-        total = sum([r['odds_scaled'] for r in pool])
-        logger.info('total odds {}'.format(total))
-
-        # dutch for all in pool (scaled is only from fixedOdds)
-        for runner in pool:
-            runner['bet'] = runner['odds_scaled'] / total * bet_chunk
-            profit = runner['bet'] * runner['odds_win'] - bet_chunk
-            logger.debug('#{} bet = {:.2f} (best={} scale={:.2f} prob={:.2f} profit={:.2f})'.format(
-                runner['runnerNumber'], runner['bet'], runner['odds_win'],
-                runner['odds_scaled'], runner['probability'], profit))
-
-        # exit when profitable
-        if profit > 0:
-            logger.info('profitable!')
-            break
-        else:
-            logger.info('nope, try again!')
-
-    return pool, num_bets
-
-
-def random_drop(runners, bet_chunk):
-    """calculate amount to bet using normal dutching but drop favourite"""
-    logger.info('betting chunk = {}'.format(bet_chunk))
-
-    # drop scratched
-    runners = [r for r in runners if r['odds_win']]
-
-    # sort runners from best to worst odds
-    random.shuffle(runners)
-
-    # start betting on all and cut off worse runner till positive outcome
-    for num_bets in range(len(runners), 0, -1):
-        logger.info('Spread on {} runners'.format(num_bets))
-
-        # reset bets for all
-        for runner in runners:
-            runner['bet'] = 0
-
-        pool = runners[:num_bets]
-        logger.info('{} in pool'.format(len(pool)))
-
-        # all odds
-        total = sum([r['odds_scaled'] for r in pool])
-        logger.info('total odds {}'.format(total))
-
-        # dutch for all in pool (scaled is only from fixedOdds)
-        for runner in pool:
-            runner['bet'] = runner['odds_scaled'] / total * bet_chunk
-            profit = runner['bet'] * runner['odds_win'] - bet_chunk
-            logger.debug('#{} bet = {:.2f} (best={} scale={:.2f} prob={:.2f} profit={:.2f})'.format(
-                runner['runnerNumber'], runner['bet'], runner['odds_win'],
-                runner['odds_scaled'], runner['probability'], profit))
-
-        # exit when profitable
-        if profit > 0:
-            logger.info('profitable!')
-            break
-        else:
-            logger.info('nope, try again!')
-
-    return pool, num_bets
