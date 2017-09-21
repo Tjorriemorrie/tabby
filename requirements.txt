@@ -10,3 +10,4 @@ arrow
 seaborn
 tensorflow
 seaborn
+scikit-learn
