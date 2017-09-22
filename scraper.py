@@ -20,11 +20,9 @@ data = {}
 
 def next_to_go(debug, oncely, balance):
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
-    balance = balance or 1000
     logger.info('next to go!')
 
     # infinitely get next to go
-    bet_chunk = balance * 0.01
     while True:
 
         update_races()
@@ -32,9 +30,9 @@ def next_to_go(debug, oncely, balance):
         next_race['status'] = 'betting'
 
         # skip the woofies and harnessies
-        if next_race['meeting']['raceType'] not in ['R', 'G']:
-            logger.info('skipping {}'.format(next_race['meeting']['meetingName']))
-            continue
+        # if next_race['meeting']['raceType'] not in ['R', 'G']:
+        #     logger.info('skipping {}'.format(next_race['meeting']['meetingName']))
+        #     continue
 
         if not oncely:
             try:
@@ -69,11 +67,20 @@ def next_to_go(debug, oncely, balance):
             continue
 
         # add bet
+        balance = int(input('Bet now on, give balance: '))
+        bet_chunk = balance * 0.05
         if next_race['meeting']['raceType'] == 'R':
-            runners, num_bets = bet_positive_dutch_R(runners, bet_chunk)
+            x = [0.86783405, 1.22605065]
+            runners, num_bets = bet_positive_dutch(runners, bet_chunk, x)
         elif next_race['meeting']['raceType'] == 'G':
             x = [2.34375000e-05, 1.16268092e+00]
             runners, num_bets = bet_positive_dutch(runners, bet_chunk, x)
+        elif next_race['meeting']['raceType'] == 'H':
+            x = [1.95119191, 1.14682542]
+            runners, num_bets = bet_positive_dutch(runners, bet_chunk, x)
+        else:
+            logger.error('Unknown race type {}'.format(next_race['meeting']['raceType']))
+            continue
 
         if not runners:
             logger.warning('No bettable runners on {} {}'.format(
@@ -110,7 +117,7 @@ def next_to_go(debug, oncely, balance):
                 '{:.2f}'.format(pp),
             ])
         print('\n')
-        print(SingleTable(runner_table, title='Bet now on {} {} {}'.format(
+        print(SingleTable(runner_table, title='{} {} {}'.format(
             next_race['meeting']['raceType'], next_race['meeting']['meetingName'], next_race['raceNumber'])).table)
 
         if oncely:

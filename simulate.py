@@ -207,114 +207,6 @@ def scale_positive_odds(runners, bet_chunk):
     return pool, num_bets
 
 
-def bet_positive_dutch_R(runners, bet_chunk):
-    """dutch betting on probability"""
-
-    # sort runners from favourite to underdog
-    ###############################################################################################
-    # -10% roi 69% wr 100% races
-    # runners.sort(key=itemgetter('probability'), reverse=True)
-    ###############################################################################################
-    # -7% roi 68% wr 100% races
-    runners.sort(key=lambda r: r['probability'] / r['odds_scale'], reverse=True)
-    ###############################################################################################
-
-    # start betting on all and cut off worse runner till positive outcome
-    for num_bets in range(len(runners), 0, -1):
-
-        # reset bets for every iteration
-        for runner in runners:
-            runner['bet'] = 0
-
-        # recreate smaller pool
-        pool = runners[:num_bets]
-        # print('pool is {} from {} bets'.format(len(pool), num_bets))
-
-        # all odds
-        total_probs = sum([r['probability'] for r in pool])
-        if not total_probs:
-            return [], 0
-        #         total_scale = sum([r['odds_scale'] for r in pool])
-        # print('total probability = {}'.format(total))
-
-        # dutch for all in pool
-        profits = []
-        for runner in pool:
-            # scale bet according to odds or prediction?
-            ###################################################################################
-            # -7% roi 68% wr
-            runner['bet'] = bet_chunk * runner['probability'] / total_probs
-            ###################################################################################
-            # -13% roi 79% wr 100% races
-            # runner['bet'] = bet_chunk * runner['odds_scale'] / total_scale
-            ###################################################################################
-
-            # need to check all as we scale to probs and not odds
-            profits.append(runner['bet'] * runner['odds_win'] - bet_chunk)
-
-        # exit with average profit
-        avg_profit = sum(profits) / len(profits)
-        ###################################################################################
-        # -9% roi 76% wr 30/30
-        # if avg_profit > 0:
-        ###################################################################################
-        # -1% roi 38% wr 26/30
-        # if avg_profit > bet_chunk * 1:
-        ###################################################################################
-        # 1% roi 25% wr 19/30
-        # if avg_profit > bet_chunk * 2:
-        ###################################################################################
-        # -4% roi 18% wr 13/30
-        # if avg_profit > bet_chunk * 3:
-        ###################################################################################
-
-        # exit with minimum profit
-        ###################################################################################
-        # -7% roi 68% wr
-        # if all(p > 0 for p in profits):
-        ###################################################################################
-        # 0% roi 35% wr 26/31
-        # if min(profits) > bet_chunk * 1:
-        ###################################################################################
-        # 2% roi 28% wr 22/31
-        # if min(profits) > bet_chunk * 1.5:
-        ###################################################################################
-        # 4% roi 24% wr 19/31
-        # if min(profits) > bet_chunk * 2:
-        ###################################################################################
-        # 3% roi 21% wr 17/31
-        # if min(profits) > bet_chunk * 2.5:
-        ###################################################################################
-        # -1% roi 18% wr 13/31
-        # if min(profits) > bet_chunk * 3:
-        ###################################################################################
-
-        # 4%  2 - 2
-        # 3%  1.745 - 1.75
-        # 2%  2.25 - 1.75
-        # 2%  2 - 2.25
-        # 3.7% 1.7 - 2
-        # 3.7% 1.8 - 2
-        # 3.7% 1.9 - 2 (1.9 5.1% - 1.8 5.3% - 1.7 4.9%)
-        # 3.4% 2.1 - 2
-        # 5.0 (1.8,1.8)
-        # 4.0 (2, 1.8)
-        if avg_profit > bet_chunk * 1.9 and min(profits) > bet_chunk * 1.8:
-            break
-    else:
-        return [], 0
-
-    # put bets from pool into runners
-    for p in pool:
-        for r in runners:
-            if r['runnerNumber'] == p['runnerNumber']:
-                r['bet'] = p['bet']
-                break
-
-    # print(json.dumps(runners, indent=4, default=str, sort_keys=True))
-    return runners, num_bets
-
-
 def bet_positive_dutch(runners, bet_chunk, x):
     """dutch betting on probability"""
 
@@ -347,11 +239,6 @@ def bet_positive_dutch(runners, bet_chunk, x):
             prob2scales.append(runner['probability'] / runner['odds_scale'])
 
         ###################################################################################
-        num_bets_flag = False
-        if num_bets >= 0:
-            num_bets_flag = True
-
-        ###################################################################################
         # MIN PROFIT
         ###################################################################################
         min_profit_flag = False
@@ -367,7 +254,7 @@ def bet_positive_dutch(runners, bet_chunk, x):
         if min_probs2scale >= x[1]:
             min_probs2scale_flag = True
 
-        if num_bets_flag and min_profit_flag and min_probs2scale_flag:
+        if min_profit_flag and min_probs2scale_flag:
             # print('breaking: {} {} {} {}'.format(min_profit_flag, avg_profit_flag, num_bets_flag, min_probs2scale_flag))
             break
     else:
