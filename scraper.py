@@ -7,9 +7,10 @@ import requests
 from sqlalchemy.orm.exc import NoResultFound
 from terminaltables import SingleTable
 
-from model import Race, save_race, list_race_dates
-from predict import add_predictions, add_scaled_odds, add_probabilities, NoRunnersError
-from simulate import bet_positive_dutch_R, bet_positive_dutch
+from model import Race, save_race, list_race_dates, delete_oldest
+from predict import add_predictions, add_scaled_odds, add_probabilities, NoRunnersError, BET_TYPE_WIN, BET_TYPES, \
+    BET_TYPE_PLACE, NoOddsError
+from simulate import bet_positive_dutch, NoBetsError
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,9 @@ data = {}
 def next_to_go(debug, oncely, balance):
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
     logger.info('next to go!')
+    balance = balance or 1000
+    # balance = int(input('Bet now on, give balance: '))
+    bet_chunk = balance * 0.01
 
     # infinitely get next to go
     while True:
@@ -30,7 +34,7 @@ def next_to_go(debug, oncely, balance):
         next_race['status'] = 'betting'
 
         # skip the woofies and harnessies
-        # if next_race['meeting']['raceType'] not in ['R', 'G']:
+        # if next_race['meeting']['raceType'] in ['G', 'H']:
         #     logger.info('skipping {}'.format(next_race['meeting']['meetingName']))
         #     continue
 
@@ -53,7 +57,12 @@ def next_to_go(debug, oncely, balance):
         runners = details['runners']
 
         # add probability (do not delete or skip keyerrors here)
-        add_scaled_odds(runners)
+        try:
+            add_scaled_odds(runners)
+        except NoOddsError as e:
+            logger.error(e)
+            continue
+
         try:
             add_predictions(runners, next_race['meeting']['raceType'])
         except NoRunnersError:
@@ -62,27 +71,78 @@ def next_to_go(debug, oncely, balance):
         add_probabilities(runners)
 
         # drop scratched
-        runners = [r for r in runners if r['odds_win']]
+        runners = [r for r in runners if r['win_odds']]
         if not runners:
             continue
 
         # add bet
-        balance = int(input('Bet now on, give balance: '))
-        bet_chunk = balance * 0.05
+        num_bets_win = 0
+        num_bets_place = 0
         if next_race['meeting']['raceType'] == 'R':
-            x = [0.86783405, 1.22605065]
-            runners, num_bets = bet_positive_dutch(runners, bet_chunk, x)
+            for bet_type in BET_TYPES:
+                if bet_type == BET_TYPE_WIN:
+                    # $2.04 profit per race
+                    # 4% of races 190 / 4666
+                    # np.s_[0:4:30j, 1.10:1.40:30j]
+                    x = [2.741649, 1.179512]
+                    try:
+                        runners, num_bets_win = bet_positive_dutch(runners, bet_chunk, bet_type, x)
+                    except NoBetsError:
+                        pass
+                elif bet_type == BET_TYPE_PLACE:
+                    # $0.85 profit per race
+                    # 89% of races 4140 / 4666
+                    # np.s_[0:2:20j, 0.01:1.0:20j]
+                    x = [0.531263, 0.636101]
+                    try:
+                        runners, num_bets_place = bet_positive_dutch(runners, bet_chunk, bet_type, x)
+                    except NoBetsError:
+                        pass
         elif next_race['meeting']['raceType'] == 'G':
-            x = [2.34375000e-05, 1.16268092e+00]
-            runners, num_bets = bet_positive_dutch(runners, bet_chunk, x)
+            for bet_type in BET_TYPES:
+                if bet_type == BET_TYPE_WIN:
+                    # $0.34 profit per race
+                    # 25% of races 1427 / 5689
+                    # np.s_[-1:3:30j, 0.80:1.20:30j]
+                    x = [1.233651, 1.00316]
+                    try:
+                        runners, num_bets_win = bet_positive_dutch(runners, bet_chunk, bet_type, x)
+                    except NoBetsError:
+                        pass
+                elif bet_type == BET_TYPE_PLACE:
+                    # $1.01 profit per race
+                    # 35% of races 1980 / 5689
+                    # np.s_[0:2:20j, 0.10:1.0:20j]
+                    x = [0.746104, 0.810913]
+                    try:
+                        runners, num_bets_place = bet_positive_dutch(runners, bet_chunk, bet_type, x)
+                    except NoBetsError:
+                        pass
         elif next_race['meeting']['raceType'] == 'H':
-            x = [1.95119191, 1.14682542]
-            runners, num_bets = bet_positive_dutch(runners, bet_chunk, x)
+            for bet_type in BET_TYPES:
+                if bet_type == BET_TYPE_WIN:
+                    # $0.47 profit per race
+                    # 55% of races 2027 / 3669
+                    # np.s_[-1:3:20j, 1:1.30:20j]
+                    x = [0.933532, 1.032385]
+                    try:
+                        runners, num_bets_win = bet_positive_dutch(runners, bet_chunk, bet_type, x)
+                    except NoBetsError:
+                        pass
+                elif bet_type == BET_TYPE_PLACE:
+                    # $1.15 profit per race
+                    # 64% of races 2355 / 3669
+                    # np.s_[0:2:20j, 0.10:1.0:20j]
+                    x = [1.036184, 0.102188]
+                    try:
+                        runners, num_bets_place = bet_positive_dutch(runners, bet_chunk, bet_type, x)
+                    except NoBetsError:
+                        pass
         else:
             logger.error('Unknown race type {}'.format(next_race['meeting']['raceType']))
             continue
 
-        if not runners:
+        if not num_bets_win and not num_bets_place and not oncely:
             logger.warning('No bettable runners on {} {}'.format(
                 details['meeting']['meetingName'], details['raceNumber']))
             continue
@@ -105,24 +165,47 @@ def next_to_go(debug, oncely, balance):
         print('\n')
         print(SingleTable(race_table, title='Races').table)
 
-        runner_table = [['Name', 'Fixed', '#', 'Prob', 'Bet', 'PP']]
+        runner_table = [['Name',
+                         '#', 'W Odds', 'W Prob', 'W Bet', 'W Profit',
+                         '#', 'P Odds', 'P Prob', 'P Bet', 'P Winning']]
         for runner in runners:
-            pp = runner['bet'] * runner['odds_win'] - bet_chunk
-            runner_table.append([
+            runner_row = [
                 runner['runnerName'],
-                '{} - {:.0f}%'.format(runner['odds_win'], runner['odds_scale'] * 100),
+            ]
+            # win
+            prob = '{}_prob'.format(BET_TYPE_WIN)
+            bet = '{}_bet'.format(BET_TYPE_WIN)
+            runner_bet = runner[bet] if num_bets_win else 0
+            odds = max(runner['win_odds'], runner['parimutuel']['returnWin'])
+            pp = runner_bet * odds - bet_chunk
+            runner_row.extend([
                 runner['runnerNumber'],
-                '{:.0f}%'.format(runner['probability'] * 100),
-                runner['bet'] and '{:.2f}'.format(runner['bet']) or '-',
+                '{:.2f}'.format(odds),
+                '{:.0f}%'.format(runner[prob] * 100),
+                runner_bet and '{:.2f}'.format(runner_bet) or '-',
                 '{:.2f}'.format(pp),
             ])
+            # place
+            prob = '{}_prob'.format(BET_TYPE_PLACE)
+            bet = '{}_bet'.format(BET_TYPE_PLACE)
+            runner_bet = runner[bet] if num_bets_place else 0
+            odds = max(runner['place_odds'], runner['parimutuel']['returnPlace'])
+            pp = runner_bet * odds
+            runner_row.extend([
+                runner['runnerNumber'],
+                '{:.2f}'.format(odds),
+                '{:.0f}%'.format(runner[prob] * 100),
+                runner_bet and '{:.2f}'.format(runner_bet) or '-',
+                '{:.2f}'.format(pp),
+            ])
+            runner_table.append(runner_row)
         print('\n')
-        print(SingleTable(runner_table, title='{} {} {}'.format(
+        print(SingleTable(runner_table, title='Bet now on {} {} {}'.format(
             next_race['meeting']['raceType'], next_race['meeting']['meetingName'], next_race['raceNumber'])).table)
 
         if oncely:
             return
-        time.sleep(15)
+        time.sleep(20)
 
 
 def update_races():
@@ -194,147 +277,20 @@ def wait_for_update(details):
     time.sleep(max(0, time_to_sleep.total_seconds()))
 
 
-def get_forms(race):
-    # form of runners
-    res = requests.get(race['_links']['form'])
-    res.raise_for_status()
-    res = res.json()
-    forms = res['form']
-    logger.info('{} runners'.format(len(forms)))
-    # print(json.dumps(forms, indent=4, default=str, sort_keys=True))
-    # raise Exception('')
-    return forms
-
-
-def persist_forms(race, forms):
-    for form in forms:
-        # print(json.dumps(runner, indent=4, default=str, sort_keys=True))
-
-        # GRAYHOUND
-        # "age": 2,
-        # "bestTime": "29.44",
-        # "blinkers": false,
-        # "colour": "BK",
-        # "dam": "LEES LEGEND",
-        # "dateOfBirth": "0315",
-        # "daysSinceLastRun": 15,
-        # "formComment": "Finished 5.8 lengths 6th (29.68) on August 28 at Nottingham over 480m in an Or race beaten by Calling Tyler. Previously finished 12 lengths 5th (18.36) on August 21 at Nottingham over 305m in an Or race beaten by Roxholme Hat. Comes in well.",
-        # "handicapWeight": 0,
-        # "last20Starts": "f1442x56",
-        # "prizeMoney": null,
-        # "runnerName": "DAYLENS RONALDO",
-        # "runnerNumber": 1,
-        # "runnerStarts": {
-        #     "previousStarts": [
-        #         {
-        #             "class": "OR",
-        #             "distance": 480,
-        #             "draw": 0,
-        #             "finishingPosition": "6",
-        #             "handicap": "0",
-        #             "margin": "5.8",
-        #             "numberOfStarters": 6,
-        #             "odds": "11.00",
-        #             "positionInRun": null,
-        #             "raceNumber": 5,
-        #             "startDate": "2017-08-28",
-        #             "startType": "LastStarts",
-        #             "startingPosition": 3,
-        #             "stewardsComment": "CRD1&3",
-        #             "time": "29.68",
-        #             "venueAbbreviation": "NOTT",
-        #             "weight": 33.7,
-        #             "winnerOrSecond": "CALLING TYLER"
-        #         },
-
-        form['runnerName'] = form['runnerName'].upper()
-        previous_starts = form['runnerStarts']['previousStarts']
-        logger.debug('{} previous starts'.format(len(previous_starts)))
-
-        if not previous_starts:
-            continue
-
-        for previous_start in previous_starts:
-            # print(json.dumps(previous_start, indent=4, default=str, sort_keys=True))
-
-            # exists?
-            previous_start['startDate'] = arrow.get(previous_start['startDate']).datetime
-            print(previous_start['startDate'])
-            sql = db_session.query(Race).filter(
-                Race.runner_name == form['runnerName'],
-                Race.raced_at == previous_start['startDate'],
-                Race.race_number == previous_start['raceNumber'])
-            # logger.info('sql: {}'.format(sql))
-            try:
-                existing_run = sql.one()
-                logger.debug('existing run: {}'.format(existing_run))
-            except NoResultFound:
-                logger.debug('None existing found')
-
-                try:
-                    existing_run = Race(**{
-                        'race_type': race['meeting']['raceType'],
-                        'runner_name': form['runnerName'],
-                        'sire': form['sire'],
-                        'dam': form['dam'],
-                        'age': form['age'],
-                        'sex': form['sex'],
-                        'colour': form['colour'],
-                        'trainer': form['trainerName'],
-                        'trainer_location': form['trainerLocation'],
-
-                        'start_type': previous_start['startType'],
-                        'raced_at': previous_start['startDate'],
-                        'race_number': previous_start['raceNumber'],
-                        'finishing_position': previous_start['finishingPosition'],
-                        'number_of_starters': previous_start['numberOfStarters'],
-                        'draw': previous_start['draw'],
-                        'margin': previous_start['margin'],
-                        'venue': previous_start['venueAbbreviation'],
-                        'distance': previous_start['distance'],
-                        'class_': previous_start['class'],
-                        'handicap': previous_start.get('handicap'),
-                        'rider': previous_start.get('rider'),
-                        'starting_position': previous_start['startingPosition'],
-                        'odds': previous_start['odds'],
-                        'winner_or_second': previous_start['winnerOrSecond'],
-                        'position_in_run': previous_start['positionInRun'],
-                        'track_condition': previous_start.get('trackCondition'),  # R
-                    })
-                except Exception:
-                    print(json.dumps(form, indent=4, default=str, sort_keys=True))
-                    print(json.dumps(previous_start, indent=4, default=str, sort_keys=True))
-                    raise
-
-                if 'skyRacing' in previous_start:
-                    existing_run.audio = previous_start['skyRacing'].get('audio'),
-                    if existing_run.audio and hasattr(existing_run.audio, '__iter__'):
-                        # logger.info(existing_race.audio)
-                        existing_run.audio = existing_run.audio[0]
-                    existing_run.video = previous_start['skyRacing'].get('video'),
-                    if existing_run.video and hasattr(existing_run.video, '__iter__'):
-                        # logger.info(existing_race.video)
-                        existing_run.video = existing_run.video[0]
-                        # raise Exception('x')
-                existing_run.time_from_string(previous_start['time'])
-
-                # must save now before duplicates are saved
-                logger.debug('saving {} {} {}'.format(
-                    form['runnerName'], previous_start['startDate'], previous_start['raceNumber']))
-                db_session.add(existing_run)
-
-        # end of all previous races
-    # end of all horses
-
-
 ####################################################################################
 # scrape history results
 ####################################################################################
 
-def scrape_history(debug, lst, dt_target, predict):
+def scrape_history(debug, lst, dt_target, predict, red):
     """scrape yesterday results and predict and save it"""
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
     logger.info('get results!')
+
+    # reduce?
+    if red:
+        dt = delete_oldest()
+        logger.info('Deleted {}'.format(dt))
+        return
 
     # list result dates
     if lst:
@@ -377,7 +333,7 @@ def scrape_history(debug, lst, dt_target, predict):
                 if race['meeting']['raceType'] in predict:
                     race['num_runners'] = add_predictions(runners, race['meeting']['raceType'])
                     add_probabilities(runners)
-            except (KeyError, ZeroDivisionError) as e:
+            except (KeyError, ZeroDivisionError, NoOddsError) as e:
                 logger.error(e)
             else:
                 save_race(race)

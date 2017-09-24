@@ -48,18 +48,19 @@ cli.add_command(watch)
 @click.option('--list', 'lst', is_flag=True, help='list dates already scraped')
 @click.option('--dt', help='scrape this specific date')
 @click.option('--predict', '-p', multiple=True, type=click.Choice(['G', 'H', 'R']))
+@click.option('--reduce', 'red', is_flag=True, help='Delete oldest data')
 @click.pass_context
-def scrape(ctx, lst, dt, predict):
+def scrape(ctx, lst, dt, predict, red):
     debug = ctx.obj['debug']
-    scrape_history(debug, lst, dt, predict)
+    scrape_history(debug, lst, dt, predict, red)
 cli.add_command(scrape)
 
 
 @click.command()
 @click.option('--odds_only', is_flag=True, help='only update runners odds')
-@click.option('-R', 'category', flag_value='R', default=True)
-@click.option('-G', 'category', flag_value='G')
-@click.option('-H', 'category', flag_value='H')
+@click.option('-R', 'category', flag_value='R', default=False)
+@click.option('-G', 'category', flag_value='G', default=False)
+@click.option('-H', 'category', flag_value='H', default=False)
 @click.pass_context
 def predict(ctx, odds_only, category):
     debug = ctx.obj['debug']

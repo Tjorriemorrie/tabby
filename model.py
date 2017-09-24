@@ -166,10 +166,14 @@ def save_race(race):
     db_session.commit()
 
 
-def load_races():
+def load_races(category):
     logger.info('Loading races...')
 
     sql = db_session.query(Race)
+
+    if category:
+        sql = sql.filter(Race.race_type == category)
+
     return sql.all()
 
 
@@ -181,3 +185,14 @@ def list_race_dates():
 def delete_race(id_):
     """list all dates"""
     return db_session.query(Race).filter(Race.id == id_).delete()
+
+
+def delete_oldest():
+    oldest_date = list_race_dates()[-1][0]
+    logger.debug('oldest_date = {}'.format(oldest_date))
+    db_session.query(Race).filter(Race.meeting_date == oldest_date).delete()
+    db_session.commit()
+    # logger.debug('vacuuming...')
+    # db_session.flush()
+    # db_session.execute('VACUUM')
+    return oldest_date
