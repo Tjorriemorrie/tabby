@@ -107,6 +107,12 @@ class Race(Base):
     num_runners = Column(Integer)
     runners_data = Column(Text)
 
+    # dividends (skip win/place/duet)
+    quinella = Column(Float)
+    exacta = Column(Float)
+    trifecta = Column(Float)
+    first_four = Column(Float)
+
     def __str__(self):
         return '<{} {} {} {} {}>'.format(self.__class__.__name__, self.meeting_date,
                                          self.venue_mnemonic, self.race_type, self.race_number)
@@ -157,6 +163,17 @@ def save_race(race):
         r.race_status = race['raceStatus']
         r.race_distance = race['raceDistance']
 
+    # dividends (outside create to update values)
+    for dividend in race['dividends']:
+        if dividend['wageringProduct'] == 'Quinella' and dividend['poolDividends']:
+            r.quinella = dividend['poolDividends'][0]['amount']
+        if dividend['wageringProduct'] == 'Exacta' and dividend['poolDividends']:
+            r.quinella = dividend['poolDividends'][0]['amount']
+        if dividend['wageringProduct'] == 'Trifecta' and dividend['poolDividends']:
+            r.quinella = dividend['poolDividends'][0]['amount']
+        if dividend['wageringProduct'] == 'FirstFour' and dividend['poolDividends']:
+            r.quinella = dividend['poolDividends'][0]['amount']
+
     # lists
     r.num_runners = race.get('num_runners')
     r.set_runners(race['runners'])
@@ -184,7 +201,8 @@ def list_race_dates():
 
 def delete_race(id_):
     """list all dates"""
-    return db_session.query(Race).filter(Race.id == id_).delete()
+    db_session.query(Race).filter(Race.id == id_).delete()
+    db_session.commit()
 
 
 def delete_oldest():

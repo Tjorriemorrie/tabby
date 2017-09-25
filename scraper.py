@@ -310,10 +310,10 @@ def scrape_history(debug, lst, dt_target, predict, red):
     meetings.raise_for_status()
     meetings = meetings.json()
     logger.info('Found {} results'.format(len(meetings)))
-    # print(json.dumps(meetings, indent=4, default=str, sort_keys=True))
-    # raise Exception('')
 
     for meeting in meetings['meetings']:
+        # print(json.dumps(meeting, indent=4, default=str, sort_keys=True))
+        # raise Exception('')
         logger.info('Processing meeting {}'.format(meeting['meetingName']))
 
         for race_basic in meeting['races']:
