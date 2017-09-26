@@ -2,8 +2,11 @@ import logging.config
 
 import click
 import arrow
+
+from py.build import build_exotic_bets
 from model import Base, engine, DBSession
 from predict import predictions
+from py.runbo import recreate_runbo
 from scraper import next_to_go, scrape_history
 from simulate import simulate
 
@@ -20,16 +23,20 @@ def cli(ctx, debug):
 @click.command()
 @click.option('--create', is_flag=True, help='create db tables')
 @click.option('--drop', is_flag=True, help='drop db tables')
+@click.option('--runbo', is_flag=True, help='recreate runbo db tables')
 @click.pass_context
-def db(ctx, create, drop):
-    db_session = DBSession()
-    if drop:
-        logging.info('dropping db tables...')
-        for table in ['race']:
-            db_session.execute('DROP TABLE IF EXISTS {}'.format(table))
-    if create:
-        logging.info('creating db tables...')
-        Base.metadata.create_all(engine)
+def db(ctx, create, drop, runbo):
+    if runbo:
+        recreate_runbo()
+    else:
+        db_session = DBSession()
+        if drop:
+            logging.info('dropping db tables...')
+            for table in ['race']:
+                db_session.execute('DROP TABLE IF EXISTS {}'.format(table))
+        if create:
+            logging.info('creating db tables...')
+            Base.metadata.create_all(engine)
 cli.add_command(db)
 
 
@@ -74,6 +81,16 @@ def sim(ctx):
     debug = ctx.obj['debug']
     simulate(debug)
 cli.add_command(sim)
+
+
+@click.command()
+@click.argument('race_type', type=click.Choice(['R', 'G', 'H']), help='Race type')
+@click.argument('bet_type', type=click.Choice(['Q']), help='Bet type')
+@click.pass_context
+def build(ctx, bet_type):
+    debug = ctx.obj['debug']
+    build_exotic_bets(debug, bet_type)
+cli.add_command(build)
 
 
 if __name__ == '__main__':

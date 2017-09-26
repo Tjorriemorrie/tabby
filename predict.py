@@ -118,10 +118,15 @@ def add_scaled_odds(runners):
 
     # scale it
     for runner in runners:
-        runner['win_scaled'] = total and runner['win_perc'] / total
+        runner['win_scaled'] = runner['win_perc'] / total
         logger.debug('#{} perc {:.2f} => scale {:.2f}'.format(
             runner['runnerNumber'], runner['win_perc'], runner['win_scaled']))
 
+        # validate %
+        if runner['win_perc'] > 1 or runner['win_scaled'] > 1:
+            raise Exception('Invalid odds perc/scaled')
+
+        # cleanup
         for k in ['odds_win', 'odds_perc', 'rank_win', 'odds_scale',
                   'prediction', 'probability']:
             runner.pop(k, None)
