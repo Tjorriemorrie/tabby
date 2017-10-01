@@ -67,17 +67,9 @@ class Runbo(Base):
     run4_win_scaled = Column(Float)
     run4_win_rank = Column(Integer)
 
-    # bet types
-    quinella_out = Column(Integer)
-    exacta_out = Column(Integer)
-    trifecta_out = Column(Integer)
-    first_four_out = Column(Integer)
-
-    # dividends
-    quinella_div = Column(Float)
-    exacta_div = Column(Float)
-    trifecta_div = Column(Float)
-    first_four_div = Column(Float)
+    # result
+    success = Column(Integer)
+    dividend = Column(Float)
 
 
 def recreate_runbo():
@@ -85,6 +77,7 @@ def recreate_runbo():
     db_session.execute('DROP TABLE IF EXISTS {}'.format(Runbo.__tablename__))
     logging.info('creating db tables...')
     Base.metadata.create_all(engine)
+    logger.info('done')
 
 
 def clear_runbo(race_type, bet_type):
