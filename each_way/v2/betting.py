@@ -7,22 +7,28 @@ logger = logging.getLogger(__name__)
 
 X = {
     RACE_TYPE_RACING: {
-        # $0.21 profit per race     8% of races 146 / 1939
-        BET_TYPE_WIN: [0.000032, 1.115354],
-        # $0.85 profit per race     33% of races 646 / 1939
-        BET_TYPE_PLACE: [0.000004, 1.271217],
+        # $0.21 profit per race     8% of races 146 / 1939      [0.000032, 1.115354],
+        # $0.67 profit per race     12% of races 344 / 2980
+        BET_TYPE_WIN: [0.000003, 1.402734],
+        # $0.85 profit per race     33% of races 646 / 1939     [0.000004, 1.271217],
+        # $1.58 profit per race     43% of races 1292 / 2980
+        BET_TYPE_PLACE: [0.000036, 1.219246],
     },
     RACE_TYPE_GRAYHOUND: {
-        # $0.06 profit per race     1% of races 36 / 2506
-        BET_TYPE_WIN: [0.000147, 1.289712],
-        # $0.67 profit per race     33% of races 820 / 2506
-        BET_TYPE_PLACE: [-0.000035, 1.163503],
+        # $0.06 profit per race     1% of races 36 / 2506       [0.000147, 1.289712],
+        # $0.70 profit per race     16% of races 599 / 3799
+        BET_TYPE_WIN: [0.000023, 1.229441],
+        # $0.67 profit per race     33% of races 820 / 2506     [-0.000035, 1.163503],
+        # $1.16 profit per race     31% of races 1188 / 3799
+        BET_TYPE_PLACE: [0.485937, 1.242198],
     },
     RACE_TYPE_HARNESS: {
-        # $0.46 profit per race     11% of races 168 / 1482
-        BET_TYPE_WIN: [0.000046, 1.250354],
-        # $0.86 profit per race     48% of races 707 / 1482
-        BET_TYPE_PLACE: [-0.000004, 1.054276],
+        # $0.46 profit per race     11% of races 168 / 1482     [0.000046, 1.250354],
+        # $0.89 profit per race     29% of races 670 / 2290
+        BET_TYPE_WIN: [0.000074, 1.267714],
+        # $0.86 profit per race     48% of races 707 / 1482     [-0.000004, 1.054276],
+        # $1.55 profit per race     34% of races 783 / 2290
+        BET_TYPE_PLACE: [0.525, 0.825],
     },
 }
 
@@ -94,7 +100,7 @@ def bet_positive_dutch(runners, bet_chunk, race_type, bet_type):
             break
 
     else:
-        raise NoBetsError('No profitable bets determined with {}'.format(x))
+        return runners, 0
 
     # put bets from pool into runners
     for p in pool:

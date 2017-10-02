@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 
@@ -50,6 +51,7 @@ def next_to_go(race_types, each_way, oncely, make_bets):
             logger.debug('skipping {} {}'.format(next_race['meeting']['raceType'], next_race['meeting']['meetingName']))
             continue
 
+        # WAIT for race to start
         if not oncely:
             try:
                 wait_for_next(next_race)
@@ -57,14 +59,6 @@ def next_to_go(race_types, each_way, oncely, make_bets):
                 logger.error(e)
                 continue
 
-        # get latest race odds
-        details = get_details(next_race)
-
-        # refresh latest odds
-        # if not oncely:
-        #     wait_for_update(details)
-
-        # update details (aka runners odds)
         details = get_details(next_race)
         runners = details['runners']
 
@@ -113,8 +107,13 @@ def next_to_go(race_types, each_way, oncely, make_bets):
             logger.warning(e)
             continue
 
-        if not num_bets_win and not (num_bets_place and len(runners) >= 8) and not oncely:
-            logger.warning('No bettable runners on {} {}'.format(
+        details = get_details(next_race)
+        if not details['allowFixedOddsPlace'] or not details['allowParimutuelPlace']:
+            logger.error('fixed or parimutuel betting not allowed')
+            continue
+
+        if not num_bets_win and not num_bets_place and not oncely:
+            logger.info('No bettable runners on {} {}\n'.format(
                 details['meeting']['meetingName'], details['raceNumber']))
             continue
 
@@ -160,7 +159,7 @@ def next_to_go(race_types, each_way, oncely, make_bets):
             # place
             prob = '{}_prob'.format(BET_TYPE_PLACE)
             bet = '{}_bet'.format(BET_TYPE_PLACE)
-            runner_bet = runner[bet] if num_bets_place and len(runners) >= 8 else 0
+            runner_bet = runner[bet] if num_bets_place else 0
             pp = runner_bet * runner['place_odds']
             runner_row.extend([
                 runner['runnerNumber'],
@@ -242,8 +241,8 @@ def get_next_race():
 
 def wait_for_next(race):
     """Wait for the next race to be close to starting"""
-    logger.info('Waiting on {} {}'.format(race['meeting']['meetingName'], race['raceNumber']))
-    logger.debug('next start time {}'.format(race['raceStartTime']))
+    logger.info('Next: {} {}'.format(race['meeting']['meetingName'], race['raceNumber']))
+    logger.debug('Next start time {}'.format(race['raceStartTime']))
     while True:
         time_to_sleep = race['raceStartTime'] - arrow.utcnow()
         logger.info('time to sleep {} (or {:.0f}s)'.format(time_to_sleep, time_to_sleep.total_seconds()))
@@ -263,19 +262,14 @@ def get_details(race):
     return res
 
 
-def wait_for_update(details):
-    """Wait on next update of fixed odds"""
-    details['fixedOddsUpdateTime'] = arrow.get(details['fixedOddsUpdateTime'])
-    logger.debug('next fixed odds update time {}'.format(details['fixedOddsUpdateTime']))
-    time_to_sleep = details['fixedOddsUpdateTime'] - arrow.utcnow()
-    logger.debug('time to sleep {} (or {:.0f}s)'.format(time_to_sleep, time_to_sleep.total_seconds()))
-    time.sleep(max(0, time_to_sleep.total_seconds()))
-
-
 def load_each_way(version):
     if version == 'v1':
         from each_way.v1.predict import add_odds, add_predictions, add_probabilities
         from each_way.v1.betting import bet_positive_dutch
+        return add_odds, add_predictions, add_probabilities, bet_positive_dutch
+    elif version == 'v2':
+        from each_way.v2.predict import add_odds, add_predictions, add_probabilities
+        from each_way.v2.betting import bet_positive_dutch
         return add_odds, add_predictions, add_probabilities, bet_positive_dutch
     else:
         raise ValueError('Unexpected version for each way {}'.format(version))
