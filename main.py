@@ -69,6 +69,11 @@ def each_way(ctx, version, race_types, odds_only, pred_only):
     if version == 'v1':
         from each_way.v1.predict import run
         run(race_types, odds_only, pred_only)
+    elif version == 'v2':
+        from each_way.v2.predict import run
+        run(race_types, odds_only, pred_only)
+    else:
+        raise Exception('Unhandled version number {}'.format(version))
 cli.add_command(each_way)
 
 
