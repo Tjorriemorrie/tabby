@@ -43,7 +43,7 @@ cli.add_command(scrape)
 
 @click.command()
 @click.argument('race_types', nargs=-1)
-@click.option('--each_way', default='v1', help='version for each way')
+@click.option('--each_way', default='v2', help='version for each way')
 @click.option('--oncely', is_flag=True, help='only run once')
 @click.option('--bet', is_flag=True, help='make real bets')
 @click.pass_context
