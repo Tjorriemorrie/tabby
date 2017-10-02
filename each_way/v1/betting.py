@@ -12,13 +12,19 @@ X = {
         # [-0.007875,  5.81    ]
         # $0.00 profit per race
         # 0% of races 1 / 7057
-        BET_TYPE_WIN: [0.7, 5.81],
+        # [0.7, 5.81],
+        # $-0.10 profit per race
+        # 4% of races 76 / 1959
+        BET_TYPE_WIN: [0.00009, 1.291595],
         # $-0.01 profit per race
         # 3% of races 211 / 7057
         # [-0.956445, 1.539453]
         # $0.02 profit per race
         # 16% of races 125 / 800
-        BET_TYPE_PLACE: [0.000027, 1.387664],
+        # [0.000027, 1.387664],
+        # $0.02 profit per race
+        # 3% of races 53 / 1959
+        BET_TYPE_PLACE: [0., 1.436842],
     },
     RACE_TYPE_GRAYHOUND: {
         # $0.01 profit per race
@@ -26,13 +32,19 @@ X = {
         # [-0.007875,  5.81    ],
         # $0.11 profit per race
         # 2% of races 20 / 1067
-        BET_TYPE_WIN: [0.000242, 1.168355],
+        # [0.000242, 1.168355],
+        # $0.03 profit per race
+        # 2% of races 42 / 2506
+        BET_TYPE_WIN: [0., 1.178947],
         # $0.01 profit per race
         # 1% of races 106 / 8942
         # [-1.01875, 1.4175],
         # $0.01 profit per race
         # 1% of races 12 / 1343
-        BET_TYPE_PLACE: [0.000031, 1.4175],
+        # [0.000031, 1.4175],
+        # $0.00 profit per race
+        # 1% of races 16 / 2506
+        BET_TYPE_PLACE: [-0.000063, 1.435],
     },
     RACE_TYPE_HARNESS: {
         # $0.05 profit per race
@@ -40,13 +52,19 @@ X = {
         # [-0.007875,  5.81    ],
         # $0.63 profit per race
         # 17% of races 166 / 949
-        BET_TYPE_WIN: [-0.000029, 1.320559],
+        # [-0.000029, 1.320559],
+        # $0.27 profit per race
+        # 9% of races 133 / 1482
+        BET_TYPE_WIN: [0.000072, 1.394531],
         # $0.01 profit per race
         # 2% of races 121 / 5700
         # [-0.007875,  5.81    ],
         # $0.05 profit per race
         # 12% of races 135 / 1112
-        BET_TYPE_PLACE: [0.000096, 1.248808],
+        # [0.000096, 1.248808],
+        # $0.04 profit per race
+        # 2% of races 37 / 1482
+        BET_TYPE_PLACE: [-0.000031, 1.4525],
     },
 }
 
