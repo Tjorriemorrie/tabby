@@ -1,15 +1,6 @@
 import logging.config
 
 import click
-import arrow
-
-from data.race import recreate_race_db
-# from py.build import build_exotic_bets
-# from model import Base, engine, DBSession
-# from predict import predictions
-# from py.runbo import recreate_runbo
-from data.scraper import scrape_history
-# from simulate import simulate
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +21,7 @@ def cli(ctx, verbose):
 @click.argument('table', type=click.Choice(['race', 'runbo']))
 @click.pass_context
 def db(ctx, table):
+    from data.race import recreate_race_db
     if table == 'race':
         recreate_race_db()
     if table == 'runbo':
@@ -44,32 +36,42 @@ cli.add_command(db)
 @click.option('--reduce', 'red', is_flag=True, help='Delete oldest data')
 @click.pass_context
 def scrape(ctx, lst, dt, red):
+    from data.scraper import scrape_history
     scrape_history(lst, dt, red)
 cli.add_command(scrape)
 
 
-# @click.command()
-# @click.option('--oncely', is_flag=True, help='only run once')
-# @click.option('--bet', is_flag=True, help='make real bets')
-# @click.pass_context
-# def watch(ctx, oncely, bet):
-#     debug = ctx.obj['debug']
-#     next_to_go(debug, oncely, bet)
-# cli.add_command(watch)
-#
-#
-# @click.command()
-# @click.option('--odds_only', is_flag=True, help='only update runners odds')
-# @click.option('-R', 'category', flag_value='R', default=False)
-# @click.option('-G', 'category', flag_value='G', default=False)
-# @click.option('-H', 'category', flag_value='H', default=False)
-# @click.pass_context
-# def predict(ctx, odds_only, category):
-#     debug = ctx.obj['debug']
-#     predictions(debug, odds_only, category)
-# cli.add_command(predict)
-#
-#
+@click.command()
+@click.argument('race_types', nargs=-1)
+@click.option('--each_way', default='v1', help='version for each way')
+@click.option('--oncely', is_flag=True, help='only run once')
+@click.option('--bet', is_flag=True, help='make real bets')
+@click.pass_context
+def watch(ctx, each_way, race_types, oncely, bet):
+    from watch import next_to_go
+    next_to_go(race_types, each_way, oncely, bet)
+cli.add_command(watch)
+
+
+@click.command()
+@click.argument('version')
+@click.option('-R', 'race_types', flag_value='R', default=False)
+@click.option('-G', 'race_types', flag_value='G', default=False)
+@click.option('-H', 'race_types', flag_value='H', default=False)
+@click.option('--odds_only', is_flag=True)
+@click.option('--pred_only', is_flag=True)
+@click.pass_context
+def each_way(ctx, version, race_types, odds_only, pred_only):
+    logger.debug('version: {}'.format(version))
+    logger.debug('race_types: {}'.format(race_types))
+    logger.debug('odds_only: {}'.format(odds_only))
+    logger.debug('pred_only: {}'.format(pred_only))
+    if version == 'v1':
+        from each_way.v1.predict import run
+        run(race_types, odds_only, pred_only)
+cli.add_command(each_way)
+
+
 # @click.command()
 # @click.pass_context
 # def sim(ctx):

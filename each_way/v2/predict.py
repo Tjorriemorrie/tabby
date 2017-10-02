@@ -5,7 +5,7 @@ import logging
 import numpy as np
 from keras.models import load_model
 
-from model import load_races, delete_race, db_session
+from data.race import load_races, delete_race, db_session
 
 logger = logging.getLogger(__name__)
 
@@ -47,45 +47,44 @@ class NoOddsError(Exception):
     pass
 
 
-def predictions(debug, odds_only, category):
+def run(race_types, args):
     """main method to update predictions in db"""
-    logger.setLevel(logging.DEBUG if debug else logging.INFO)
+    for race_type in race_types or ['R', 'G', 'H']:
+        logger.info('Running race type {}'.format(race_type))
+        races = load_races(race_type)
+        logger.info('loaded {} races...'.format(len(races)))
 
-    races = load_races(category)
-    logger.info('predicting on {} {} races...'.format(len(races), category or 'all'))
+        for i, race in enumerate(races):
+            logger.info('Running race {} {}'.format(race.meeting_name, race.meeting_date))
+            runners = race.get_runners()
 
-    for i, race in enumerate(races):
-        logger.info('Predicting race {} {}'.format(race.meeting_name, race.meeting_date))
+            # shared with watching
+            try:
+                if 'odds' in args:
+                    process_odds(runners)
+                # race.num_runners = add_predictions_v2(runners, race.race_type)
+                # add_probabilities(runners)
+            # back to unshared
 
-        runners = race.get_runners()
+            except Exception as e:
+                print(json.dumps(race, indent=4, default=str, sort_keys=True))
+                print(json.dumps(runners, indent=4, default=str, sort_keys=True))
+                raise
+                # logger.error(e)
+                # delete_race(race.id)
+            # except NoOddsError as e:
+            #     logger.error(e)
+            #     delete_race(race.id)
+            else:
+                race.set_runners(runners)
+                logger.info('{:.1f}% completed'.format(i / len(races) * 100))
 
-        # shared with watching
-        try:
-            add_scaled_odds(runners)
-            if not odds_only:
-                race.num_runners = add_predictions_v2(runners, race.race_type)
-                add_probabilities(runners)
-        # back to unshared
-        except KeyError as e:
-            print(json.dumps(runners, indent=4, default=str, sort_keys=True))
-            raise
-            # logger.error(e)
-            # delete_race(race.id)
-        except NoOddsError as e:
-            logger.error(e)
-            delete_race(race.id)
-        else:
-            race.set_runners(runners)
-            logger.info('{:.1f}% completed'.format(i / len(races) * 100))
-
-    logger.info('saving...')
-    db_session.commit()
+        logger.info('saving...')
+        db_session.commit()
 
 
-def add_scaled_odds(runners):
-    """add odds for fixed odds ONLY
-    size: 241M
-    """
+def process_odds(runners):
+    """add odds for fixed odds ONLY"""
     # convert decimal odds to percentages
     # print(json.dumps(runners[0], indent=4, default=str, sort_keys=True))
     # raise Exception('')
