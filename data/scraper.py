@@ -3,7 +3,7 @@ import logging
 import arrow
 import requests
 
-from race import save_race, list_race_dates, delete_oldest
+from data.race import save_race, list_race_dates, delete_oldest
 
 logger = logging.getLogger(__name__)
 

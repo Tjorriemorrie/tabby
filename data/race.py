@@ -14,7 +14,7 @@ Base = declarative_base()
 
 # Create an engine that stores data in the local directory's
 # sqlalchemy_example.db file.
-engine = create_engine('sqlite:///race.db')
+engine = create_engine('sqlite:///data/race.db')
 
 DBSession = sessionmaker(bind=engine, autocommit=False, autoflush=True)
 # DBSession.bind = engine
@@ -75,6 +75,15 @@ class Race(Base):
 
     def set_results(self, data):
         self.results_data = json.dumps(data)
+
+
+def recreate_race_db():
+    db_session = DBSession()
+    logging.info('dropping db tables...')
+    db_session.execute('DROP TABLE IF EXISTS {}'.format(Race.__name__))
+    logging.info('creating db tables...')
+    Base.metadata.create_all(engine)
+    logging.info('done')
 
 
 def save_race(race):
