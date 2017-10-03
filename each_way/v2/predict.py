@@ -47,11 +47,9 @@ def run(race_types, odds_only, pred_only):
                 if not odds_only:
                     add_predictions(runners, race_type)
                     add_probabilities(runners)
-            except OddsError as e:
+            except (OddsError, ProbabilityError) as e:
                 logger.warning(e)
                 delete_race(race.id)
-            except ProbabilityError as e:
-                logger.warning(e)
             except Exception:
                 print(json.dumps(race, indent=4, default=str, sort_keys=True))
                 print(json.dumps(runners, indent=4, default=str, sort_keys=True))
@@ -59,7 +57,7 @@ def run(race_types, odds_only, pred_only):
             else:
                 race.num_runners = len([r for r in runners if r['has_odds']])
                 race.set_runners(runners)
-                logger.info('{:.1f}% completed'.format(i / len(races) * 100))
+                logger.info('{:.0f}% completed'.format(i / len(races) * 100))
 
         logger.info('saving...')
         db_session.commit()
@@ -97,7 +95,7 @@ def add_odds(runners):
             runner['runnerNumber'], runner['win_odds'], runner['place_odds']))
 
         if not runner['win_odds'] or not runner['place_odds']:
-            logger.warning('#{} has no odds win {} or place {}'.format(
+            logger.debug('#{} has no odds win {} or place {}'.format(
                 runner['runnerNumber'], runner['win_odds'], runner['place_odds']))
             runner['has_odds'] = False
             runner['win_rank'] = math.log(len(runners))
@@ -179,6 +177,7 @@ def add_predictions(runners, race_type):
 
                 # make prediction on data
                 preds = mdl.predict(np.array(x))
+                logger.debug('preds: {}'.format(preds))
                 prediction = sum(preds[0])
                 logger.debug('#{} {} prediction: {:.2f}'.format(runner['runnerNumber'], bet_type, prediction))
             runner[pred] = prediction
@@ -206,6 +205,8 @@ def add_probabilities(runners):
             runner[prob] = probability
             if runner[pred]:
                 logger.debug('#{} {} probability: {:.2f}'.format(runner['runnerNumber'], bet_type, probability))
+            # if runner['runnerName'] == 'TARNHELM' and runner['win_odds'] == 2.3 and bet_type == BET_TYPE_PLACE:
+            #     raise Exception(probability)
 
         # total probability must be 1
         total_prob = sum(r[prob] for r in runners)

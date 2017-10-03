@@ -12,8 +12,9 @@ X = {
         # $0.98 profit per race     31% of races 1261 / 4116
         BET_TYPE_WIN: [2.083643, 0.951995],
         # $0.85 profit per race     33% of races 646 / 1939     [0.000004, 1.271217],
-        # $1.58 profit per race     43% of races 1292 / 2980
-        BET_TYPE_PLACE: [0.000036, 1.219246],
+        # $1.58 profit per race     43% of races 1292 / 2980    [0.000036, 1.219246],
+        # $1.52 profit per race     42% of races 1731 / 4108
+        BET_TYPE_PLACE: [0.000033, 1.209581],
     },
     RACE_TYPE_GRAYHOUND: {
         # $0.06 profit per race     1% of races 36 / 2506       [0.000147, 1.289712],
@@ -21,8 +22,9 @@ X = {
         # $0.85 profit per race     18% of races 947 / 5359
         BET_TYPE_WIN: [1.887109, 1.112253],
         # $0.67 profit per race     33% of races 820 / 2506     [-0.000035, 1.163503],
-        # $1.16 profit per race     31% of races 1188 / 3799
-        BET_TYPE_PLACE: [0.485937, 1.242198],
+        # $1.16 profit per race     31% of races 1188 / 3799    [0.485937, 1.242198],
+        # $1.15 profit per race     24% of races 1263 / 5358
+        BET_TYPE_PLACE: [-0.26153, 1.335732],
     },
     RACE_TYPE_HARNESS: {
         # $0.46 profit per race     11% of races 168 / 1482     [0.000046, 1.250354],
@@ -30,8 +32,9 @@ X = {
         # $1.14 profit per race     31% of races 989 / 3236
         BET_TYPE_WIN: [1.173401, 1.243652],
         # $0.86 profit per race     48% of races 707 / 1482     [-0.000004, 1.054276],
-        # $1.55 profit per race     34% of races 783 / 2290
-        BET_TYPE_PLACE: [0.525, 0.825],
+        # $1.55 profit per race     34% of races 783 / 2290     [0.525, 0.825],
+        # $1.89 profit per race     55% of races 1783 / 3235
+        BET_TYPE_PLACE: [-1.018457, 1.155212],
     },
 }
 
@@ -42,6 +45,7 @@ class NoBetsError(Exception):
 
 def bet_positive_dutch(runners, bet_chunk, race_type, bet_type):
     """dutch betting on probability"""
+    pred = '{}_pred'.format(bet_type)
     pred = '{}_pred'.format(bet_type)
     prob = '{}_prob'.format(bet_type)
     bet = '{}_bet'.format(bet_type)
@@ -71,6 +75,7 @@ def bet_positive_dutch(runners, bet_chunk, race_type, bet_type):
         for runner in pool:
             # scale bet according to prediction
             runner[bet] = bet_chunk * runner[pred] / total_preds
+            runner['{}_type'.format(bet)] = 'parimutuel'
 
             # need to check all as we scale to probs and not odds
             if bet_type == 'W':
@@ -110,6 +115,7 @@ def bet_positive_dutch(runners, bet_chunk, race_type, bet_type):
         for r in runners:
             if r['runnerNumber'] == p['runnerNumber']:
                 r[bet] = p[bet]
+                r['{}_type'.format(bet)] = p['{}_type'.format(bet)]
                 break
 
     return runners, num_bets

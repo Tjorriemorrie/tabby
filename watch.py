@@ -44,7 +44,6 @@ def next_to_go(race_types, each_way, oncely, make_bets):
 
         update_races()
         next_race = get_next_race()
-        next_race['status'] = 'betting'
 
         # skip the woofies and harnessies
         if next_race['meeting']['raceType'] not in race_types:
@@ -53,11 +52,8 @@ def next_to_go(race_types, each_way, oncely, make_bets):
 
         # WAIT for race to start
         if not oncely:
-            try:
-                wait_for_next(next_race)
-            except KeyError as e:
-                logger.error(e)
-                continue
+            wait_for_next(next_race)
+        next_race['status'] = 'betting'
 
         details = get_details(next_race)
         runners = details['runners']
@@ -75,6 +71,7 @@ def next_to_go(race_types, each_way, oncely, make_bets):
         runners = [r for r in runners if r['has_odds']]
         if not runners:
             logger.warning('No runners in race')
+            next_race['status'] = 'finished'
             continue
 
         # bet
@@ -105,17 +102,22 @@ def next_to_go(race_types, each_way, oncely, make_bets):
                         runners, num_bets_place = bet_method(runners, bet_chunk, RACE_TYPE_HARNESS, bet_type)
         except Exception as e:
             logger.warning(e)
+            next_race['status'] = 'finished'
             continue
 
         details = get_details(next_race)
         if not details['allowFixedOddsPlace'] or not details['allowParimutuelPlace']:
             logger.error('fixed or parimutuel betting not allowed')
+            next_race['status'] = 'finished'
             continue
 
         if not num_bets_win and not num_bets_place and not oncely:
             logger.info('No bettable runners on {} {}\n'.format(
                 details['meeting']['meetingName'], details['raceNumber']))
+            next_race['status'] = 'finished'
             continue
+
+        next_race['runners'] = runners
 
         # RACES
         race_table = [['Type', 'Meeting', 'Race', '#', 'Start Time', 'status']]
@@ -244,11 +246,15 @@ def wait_for_next(race):
     logger.info('Next: {} {}'.format(race['meeting']['meetingName'], race['raceNumber']))
     logger.debug('Next start time {}'.format(race['raceStartTime']))
     while True:
-        time_to_sleep = race['raceStartTime'] - arrow.utcnow()
+        time_to_sleep = race['raceStartTime'] - arrow.utcnow().shift(seconds=-10)
         logger.info('time to sleep {} (or {:.0f}s)'.format(time_to_sleep, time_to_sleep.total_seconds()))
-        if time_to_sleep.total_seconds() < 0:
+        if time_to_sleep.total_seconds() > 60:
+            check_for_results()
+        elif time_to_sleep.total_seconds() < 0:
             break
-        time.sleep(min(60, time_to_sleep.total_seconds()))
+        sleep_for = min(60, time_to_sleep.total_seconds())
+        logger.debug('sleeping for {}s'.format(sleep_for))
+        time.sleep(sleep_for)
 
 
 def get_details(race):
@@ -260,6 +266,41 @@ def get_details(race):
     # print(json.dumps(res, indent=4, default=str, sort_keys=True))
     # raise Exception('get_details')
     return res
+
+
+def check_for_results():
+    """check races for bet results"""
+    # return
+    for key, race in data.items():
+        if race['status'] == 'betting':
+            logger.debug('What happened at {} R{}?'.format(race['meeting']['meetingName'], race['raceNumber']))
+            runners = race['runners']
+            has_bets = any(r.get('W_bet') or r.get('P_bet') for r in runners)
+            if not has_bets:
+                logger.info('No bets on {} R{}'.format(race['meeting']['meetingName'], race['raceNumber']))
+                race['status'] = 'finished'
+                return
+
+            details = get_details(race)
+            if not details['results']:
+                logger.info('No results yet for {} R{}'.format(race['meeting']['meetingName'], race['raceNumber']))
+                return
+
+            wins, places = [], []
+            for runner in race['runners']:
+                for bet_type in BET_TYPES:
+                    bet = '{}_bet'.format(bet_type)
+                    if runner.get(bet):
+                        outcome = {
+                            'runnerNumber': runner['runnerNumber'],
+                            'bet': runner['W_bet'],
+                        }
+
+                        wins.append(outcome)
+            details.pop('runners')
+            print(json.dumps(details, indent=4, default=str, sort_keys=True))
+            raise Exception('what is results?')
+
 
 
 def load_each_way(version):
