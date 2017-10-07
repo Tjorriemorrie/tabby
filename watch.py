@@ -1,6 +1,8 @@
 import json
 import logging
 import time
+from operator import itemgetter
+from itertools import chain
 
 import arrow
 import requests
@@ -44,6 +46,8 @@ def next_to_go(race_types, each_way, oncely, make_bets):
 
         update_races()
         next_race = get_next_race()
+        # set to finished, but changed to bettng when there are bets
+        next_race['status'] = 'finished'
 
         # skip the woofies and harnessies
         if next_race['meeting']['raceType'] not in race_types:
@@ -53,7 +57,6 @@ def next_to_go(race_types, each_way, oncely, make_bets):
         # WAIT for race to start
         if not oncely:
             wait_for_next(next_race)
-        next_race['status'] = 'betting'
 
         details = get_details(next_race)
         runners = details['runners']
@@ -71,7 +74,6 @@ def next_to_go(race_types, each_way, oncely, make_bets):
         runners = [r for r in runners if r['has_odds']]
         if not runners:
             logger.warning('No runners in race')
-            next_race['status'] = 'finished'
             continue
 
         # bet
@@ -102,22 +104,20 @@ def next_to_go(race_types, each_way, oncely, make_bets):
                         runners, num_bets_place = bet_method(runners, bet_chunk, RACE_TYPE_HARNESS, bet_type)
         except Exception as e:
             logger.warning(e)
-            next_race['status'] = 'finished'
             continue
 
         details = get_details(next_race)
         if not details['allowFixedOddsPlace'] or not details['allowParimutuelPlace']:
             logger.error('fixed or parimutuel betting not allowed')
-            next_race['status'] = 'finished'
             continue
 
         if not num_bets_win and not num_bets_place and not oncely:
             logger.info('No bettable runners on {} {}\n'.format(
                 details['meeting']['meetingName'], details['raceNumber']))
-            next_race['status'] = 'finished'
             continue
 
         next_race['runners'] = runners
+        next_race['status'] = 'betting'
 
         # RACES
         race_table = [['Type', 'Meeting', 'Race', '#', 'Start Time', 'status']]
@@ -140,8 +140,8 @@ def next_to_go(race_types, each_way, oncely, make_bets):
 
         # RUNNERS
         runner_table = [['Name',
-                         '#', 'W Odds', 'W Prob', 'W Bet', 'W Profit',
-                         '#', 'P Odds', 'P Prob', 'P Bet', 'P Winning']]
+                         '#', 'W Odds', 'W Prob', 'W Bet',
+                         '#', 'P Odds', 'P Prob', 'P Bet']]
         for runner in runners:
             runner_row = [
                 runner['runnerName'],
@@ -150,34 +150,29 @@ def next_to_go(race_types, each_way, oncely, make_bets):
             prob = '{}_prob'.format(BET_TYPE_WIN)
             bet = '{}_bet'.format(BET_TYPE_WIN)
             runner_bet = runner[bet] if num_bets_win else 0
-            pp = runner_bet * runner['win_odds'] - bet_chunk
             runner_row.extend([
                 runner['runnerNumber'],
                 '{:.2f}'.format(runner['win_odds']),
                 '{:.0f}%'.format(runner[prob] * 100),
                 runner_bet and '{:.2f}'.format(runner_bet) or '-',
-                '{:.2f}'.format(pp),
             ])
             # place
             prob = '{}_prob'.format(BET_TYPE_PLACE)
             bet = '{}_bet'.format(BET_TYPE_PLACE)
             runner_bet = runner[bet] if num_bets_place else 0
-            pp = runner_bet * runner['place_odds']
             runner_row.extend([
                 runner['runnerNumber'],
                 '{:.2f}'.format(runner['place_odds']),
                 '{:.0f}%'.format(runner[prob] * 100),
                 runner_bet and '{:.2f}'.format(runner_bet) or '-',
-                '{:.2f}'.format(pp),
             ])
             runner_table.append(runner_row)
         print('\n')
-        print(SingleTable(runner_table, title='Bet now on {} {} {}'.format(
+        print(SingleTable(runner_table, title='Bet on {} {} {}'.format(
             next_race['meeting']['raceType'], next_race['meeting']['meetingName'], next_race['raceNumber'])).table)
 
         if oncely:
             return
-        time.sleep(5)
 
 
 def login(s):
@@ -246,14 +241,13 @@ def wait_for_next(race):
     logger.info('Next: {} {}'.format(race['meeting']['meetingName'], race['raceNumber']))
     logger.debug('Next start time {}'.format(race['raceStartTime']))
     while True:
-        time_to_sleep = race['raceStartTime'] - arrow.utcnow().shift(seconds=-10)
-        logger.info('time to sleep {} (or {:.0f}s)'.format(time_to_sleep, time_to_sleep.total_seconds()))
-        if time_to_sleep.total_seconds() > 60:
+        time_to_sleep = race['raceStartTime'] - arrow.utcnow()
+        if time_to_sleep.total_seconds() > 80:
             check_for_results()
         elif time_to_sleep.total_seconds() < 0:
             break
         sleep_for = min(60, time_to_sleep.total_seconds())
-        logger.debug('sleeping for {}s'.format(sleep_for))
+        logger.info('waiting for {}'.format(time_to_sleep))
         time.sleep(sleep_for)
 
 
@@ -270,37 +264,88 @@ def get_details(race):
 
 def check_for_results():
     """check races for bet results"""
-    # return
     for key, race in data.items():
         if race['status'] == 'betting':
-            logger.debug('What happened at {} R{}?'.format(race['meeting']['meetingName'], race['raceNumber']))
+            title = '[{}] {} R{}'.format(race['meeting']['raceType'], race['meeting']['meetingName'], race['raceNumber'])
+            logger.debug('What happened at {}?'.format(title))
             runners = race['runners']
             has_bets = any(r.get('W_bet') or r.get('P_bet') for r in runners)
             if not has_bets:
-                logger.info('No bets on {} R{}'.format(race['meeting']['meetingName'], race['raceNumber']))
+                logger.info('No bets on {}'.format(title))
                 race['status'] = 'finished'
                 return
 
             details = get_details(race)
+            if details['raceStatus'] == 'Abandoned':
+                logger.info('{} has been abandoned!'.format(title))
+                race['status'] = 'finished'
+                continue
+
             if not details['results']:
-                logger.info('No results yet for {} R{}'.format(race['meeting']['meetingName'], race['raceNumber']))
+                logger.info('No results yet for {}'.format(title))
                 return
 
-            wins, places = [], []
-            for runner in race['runners']:
+            if not details['dividends']:
+                logger.info('No dividends yet for {}'.format(title))
+                return
+
+            runners = sorted([r for r in runners if r['has_odds']], key=itemgetter('win_odds'))
+            results = [num for grp in details['results'] for num in grp]
+            logger.debug('results for race {}'.format(results))
+
+            net = 0
+            table_data = [['Pos', '#', 'Win', 'Place', 'Bets', 'Net']]
+            for r in runners:
+                dr = [dr for dr in details['runners'] if dr['runnerNumber'] == r['runnerNumber']][0]
+                pos = results.index(r['runnerNumber']) + 1 if r['runnerNumber'] in results else ''
+                logger.debug('#{} pos = {}'.format(r['runnerNumber'], pos))
+                row = [
+                    pos,
+                    r['runnerNumber'],
+                    dr['parimutuel']['returnWin'],
+                    dr['parimutuel']['returnPlace'],
+                ]
+                # get bets and results for win and place
+                bets = []
+                payouts = 0
                 for bet_type in BET_TYPES:
-                    bet = '{}_bet'.format(bet_type)
-                    if runner.get(bet):
-                        outcome = {
-                            'runnerNumber': runner['runnerNumber'],
-                            'bet': runner['W_bet'],
-                        }
+                    key = '{}_bet'.format(bet_type)
+                    if not r.get(key):
+                        continue
+                    bet = r[key]
+                    bets.append('{}: {:.2f}'.format(bet_type, bet))
+                    div = get_dividend(details['dividends'], r['runnerNumber'], bet_type)
+                    payout = bet * div - bet
+                    payouts += payout
+                    net += payout
+                    logger.debug('#{} payout {} bet {:.2f} div {:.2f} => {:.2f}'.format(
+                        r['runnerNumber'], bet_type, bet, div, payout))
+                # add bet results or nothing
+                row.append(' & '.join(bets) if bets else '-')
+                row.append('{:.2f}'.format(payouts) if payouts else '-')
+                table_data.append(row)
+            # net
+            table_data.append(['', '', '', '', 'Total', '{:.2f}'.format(net)])
+            # print table
+            print('\n')
+            print(SingleTable(table_data, title='Bet slip for {}'.format(title)).table)
+            # finished
+            race['status'] = 'finished'
+            time.sleep(10)
+            return
 
-                        wins.append(outcome)
-            details.pop('runners')
-            print(json.dumps(details, indent=4, default=str, sort_keys=True))
-            raise Exception('what is results?')
 
+def get_dividend(dividends, runnerNumber, bet_type):
+    """Get dividend amount from results"""
+    for dividend in dividends:
+        if dividend['wageringProduct'].startswith(bet_type):
+            logger.debug('Dividend found: {}'.format(dividend))
+            for div in dividend['poolDividends']:
+                if runnerNumber in div['selections']:
+                    logger.debug('#{} amount {} found for selection'.format(runnerNumber, div['amount']))
+                    return div['amount']
+    logger.debug('#{} not in selection'.format(runnerNumber))
+    return 0
 
 
 def load_each_way(version):

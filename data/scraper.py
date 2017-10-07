@@ -1,5 +1,6 @@
 import logging
 
+import json
 import arrow
 import requests
 
@@ -49,10 +50,14 @@ def scrape_history(lst, dt_target, red):
             url = race_basic['_links']['self']
             logger.info('Scraping race {}'.format(url))
             race = requests.get(url)
-            race.raise_for_status()
+            try:
+                race.raise_for_status()
+            except Exception as e:
+                logger.warning(e)
+                continue
             race = race.json()
-            # print(json.dumps(race, indent=4, default=str, sort_keys=True))
-            # raise Exception('')
+            print(json.dumps(race, indent=4, default=str, sort_keys=True))
+            raise Exception('')
 
             save_race(race)
 

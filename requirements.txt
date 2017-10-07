@@ -11,3 +11,4 @@ seaborn
 tensorflow
 seaborn
 scikit-learn
+halo

@@ -47,12 +47,13 @@ def run(race_types, odds_only, pred_only):
                 if not odds_only:
                     add_predictions(runners, race_type)
                     add_probabilities(runners)
-            except (OddsError, ProbabilityError) as e:
+            except OddsError as e:
                 logger.warning(e)
                 delete_race(race.id)
-            except Exception:
+            except (Exception, ProbabilityError):
                 print(json.dumps(race, indent=4, default=str, sort_keys=True))
                 print(json.dumps(runners, indent=4, default=str, sort_keys=True))
+                delete_race(race.id)
                 raise
             else:
                 race.num_runners = len([r for r in runners if r['has_odds']])
@@ -98,15 +99,15 @@ def add_odds(runners):
             logger.debug('#{} has no odds win {} or place {}'.format(
                 runner['runnerNumber'], runner['win_odds'], runner['place_odds']))
             runner['has_odds'] = False
-            runner['win_rank'] = math.log(len(runners))
+            runner['win_rank'] = 0
             runner['win_perc'] = 0
-            runner['place_rank'] = math.log(len(runners))
+            runner['place_rank'] = 0
             runner['place_perc'] = 0
             continue
 
         # add runner rank
-        runner['win_rank'] = all_win_odds.index(runner['win_odds']) + 1
-        runner['place_rank'] = all_place_odds.index(runner['place_odds']) + 1
+        runner['win_rank'] = 1 - (all_win_odds.index(runner['win_odds']) / len(runners))
+        runner['place_rank'] = 1 - (all_place_odds.index(runner['place_odds']) / len(runners))
         logger.debug('#{} win rank {:.2f} and place rank {:.2f}'.format(
             runner['runnerNumber'], runner['win_rank'], runner['place_rank']))
 
@@ -128,10 +129,12 @@ def add_odds(runners):
         raise OddsError('No total win perc {} or no total place perc {}'.format(total_win_perc, total_place_perc))
 
     num_runners = len([r for r in runners if r['has_odds']])
+    if num_runners <= 2:
+        raise OddsError('No enough runners: {}'.format(num_runners))
 
     # scale it
     for runner in runners:
-        runner['num_runners'] = num_runners
+        runner['num_runners'] = 1 / num_runners
         runner['win_scaled'] = runner['win_perc'] / total_win_perc
         logger.debug('#{} win perc {:.2f} => win scale {:.2f}'.format(
             runner['runnerNumber'], runner['win_perc'], runner['win_scaled']))
@@ -165,7 +168,7 @@ def add_predictions(runners, race_type):
             prediction = 0
 
             if not runner['has_odds']:
-                logger.debug('runner scratched')
+                logger.debug('#{} runner scratched'.format(runner['runnerNumber']))
             else:
                 # get data
                 # xn, xwp, xws, xwr, xpp, xps, xpr
@@ -174,10 +177,10 @@ def add_predictions(runners, race_type):
                     runner['win_perc'], runner['win_scaled'], runner['win_rank'],
                     runner['place_perc'], runner['place_scaled'], runner['place_rank'],
                 )]
+                logger.debug('#{} {} X={}'.format(runner['runnerNumber'], bet_type, x))
 
                 # make prediction on data
                 preds = mdl.predict(np.array(x))
-                logger.debug('preds: {}'.format(preds))
                 prediction = sum(preds[0])
                 logger.debug('#{} {} prediction: {:.2f}'.format(runner['runnerNumber'], bet_type, prediction))
             runner[pred] = prediction
@@ -194,10 +197,11 @@ def add_probabilities(runners):
         pred = '{}_pred'.format(bet_type)
         prob = '{}_prob'.format(bet_type)
 
-        total_pred = sum(r[pred] for r in runners)
+        preds = [r[pred] for r in runners]
+        total_pred = sum(preds)
         logger.debug('total {} prediction = {}'.format(bet_type, total_pred))
         if not total_pred:
-            raise ProbabilityError('No total prediction')
+            raise ProbabilityError('No total prediction, retrain {}, got {}'.format(bet_type, preds))
 
         # scale predictions
         for runner in runners:
