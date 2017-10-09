@@ -18,15 +18,15 @@ def cli(ctx, verbose):
 
 
 @click.command()
-@click.argument('table', type=click.Choice(['race', 'runbo']))
+@click.argument('table', type=click.Choice(['race', 'exotic']))
 @click.pass_context
 def db(ctx, table):
-    from data.race import recreate_race_db
     if table == 'race':
+        from data.race import recreate_race_db
         recreate_race_db()
-    if table == 'runbo':
-        # recreate_runbo()
-        pass
+    if table == 'exotic':
+        from data.exotic import recreate_exotic
+        recreate_exotic()
 cli.add_command(db)
 
 
@@ -77,22 +77,28 @@ def each_way(ctx, version, race_types, odds_only, pred_only):
 cli.add_command(each_way)
 
 
-# @click.command()
-# @click.pass_context
-# def sim(ctx):
-#     debug = ctx.obj['debug']
-#     simulate(debug)
-# cli.add_command(sim)
-#
-#
-# @click.command()
-# @click.argument('race_type', type=click.Choice(['R', 'G', 'H']))
-# @click.argument('bet_type', type=click.Choice(['Q']))
-# @click.pass_context
-# def build(ctx, race_type, bet_type):
-#     debug = ctx.obj['debug']
-#     build_exotic_bets(debug, race_type, bet_type)
-# cli.add_command(build)
+@click.command()
+@click.argument('version')
+@click.argument('action', type=click.Choice(['build', 'predict']))
+@click.argument('bet_type', type=click.Choice(['Q']))
+@click.option('-R', 'race_types', flag_value='R', default=False)
+@click.option('-G', 'race_types', flag_value='G', default=False)
+@click.option('-H', 'race_types', flag_value='H', default=False)
+@click.pass_context
+def exotic(ctx, version, action, bet_type, race_types):
+    logger.debug('version: {}'.format(version))
+    logger.debug('bet_type: {}'.format(bet_type))
+    logger.debug('race_types: {}'.format(race_types))
+    if version == 'v1':
+        if action == 'build':
+            from exotic.v1.predict import build
+            build(bet_type, race_types)
+        else:
+            from exotic.v1.predict import predict
+            predict(bet_type, race_types)
+    else:
+        raise Exception('Unhandled version number {}'.format(version))
+cli.add_command(exotic)
 
 
 if __name__ == '__main__':

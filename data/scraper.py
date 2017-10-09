@@ -56,8 +56,8 @@ def scrape_history(lst, dt_target, red):
                 logger.warning(e)
                 continue
             race = race.json()
-            print(json.dumps(race, indent=4, default=str, sort_keys=True))
-            raise Exception('')
+            # print(json.dumps(race, indent=4, default=str, sort_keys=True))
+            # raise Exception('')
 
             save_race(race)
 

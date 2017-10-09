@@ -281,11 +281,11 @@ def check_for_results():
                 race['status'] = 'finished'
                 continue
 
-            if not details['results']:
+            if not details.get('results'):
                 logger.info('No results yet for {}'.format(title))
                 return
 
-            if not details['dividends']:
+            if not details.get('dividends'):
                 logger.info('No dividends yet for {}'.format(title))
                 return
 
@@ -295,31 +295,35 @@ def check_for_results():
 
             net = 0
             table_data = [['Pos', '#', 'Win', 'Place', 'Bets', 'Net']]
-            for r in runners:
-                dr = [dr for dr in details['runners'] if dr['runnerNumber'] == r['runnerNumber']][0]
-                pos = results.index(r['runnerNumber']) + 1 if r['runnerNumber'] in results else ''
-                logger.debug('#{} pos = {}'.format(r['runnerNumber'], pos))
+            for dr in details['runners']:
+                pos = results.index(dr['runnerNumber']) + 1 if dr['runnerNumber'] in results else ''
+                logger.debug('#{} pos = {}'.format(dr['runnerNumber'], pos))
                 row = [
                     pos,
-                    r['runnerNumber'],
+                    # '{} ({})'.format(dr['runnerNumber'], dr['parimutuel']['bettingStatus']),
+                    dr['runnerNumber'],
                     dr['parimutuel']['returnWin'],
                     dr['parimutuel']['returnPlace'],
                 ]
                 # get bets and results for win and place
                 bets = []
                 payouts = 0
-                for bet_type in BET_TYPES:
-                    key = '{}_bet'.format(bet_type)
-                    if not r.get(key):
-                        continue
-                    bet = r[key]
-                    bets.append('{}: {:.2f}'.format(bet_type, bet))
-                    div = get_dividend(details['dividends'], r['runnerNumber'], bet_type)
-                    payout = bet * div - bet
-                    payouts += payout
-                    net += payout
-                    logger.debug('#{} payout {} bet {:.2f} div {:.2f} => {:.2f}'.format(
-                        r['runnerNumber'], bet_type, bet, div, payout))
+                try:
+                    r = [r for r in runners if r['runnerNumber'] == dr['runnerNumber']][0]
+                    for bet_type in BET_TYPES:
+                        key = '{}_bet'.format(bet_type)
+                        if not r.get(key):
+                            continue
+                        bet = r[key]
+                        bets.append('{}: {:.2f}'.format(bet_type, bet))
+                        div = get_dividend(details['dividends'], r['runnerNumber'], bet_type)
+                        payout = bet * div - bet
+                        payouts += payout
+                        net += payout
+                        logger.debug('#{} payout {} bet {:.2f} div {:.2f} => {:.2f}'.format(
+                            r['runnerNumber'], bet_type, bet, div, payout))
+                except IndexError as e:
+                    logger.debug('#{} has no odds, not found'.format(dr['runnerNumber']))
                 # add bet results or nothing
                 row.append(' & '.join(bets) if bets else '-')
                 row.append('{:.2f}'.format(payouts) if payouts else '-')

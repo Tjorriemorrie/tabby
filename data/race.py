@@ -140,7 +140,7 @@ def save_race(race):
 
 
 def load_races(category):
-    logger.info('Loading races...')
+    logger.info('Loading races for {}...'.format(category))
 
     sql = db_session.query(Race)
 
