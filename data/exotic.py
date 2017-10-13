@@ -38,6 +38,8 @@ class Exotic(Base):
     id = Column(Integer, primary_key=True)
 
     # general
+    race_id = Column(Integer)
+    runner_numbers = Column(String(250))
     race_type = Column(String(250))
     bet_type = Column(String(250))
     res1 = Column(Integer)

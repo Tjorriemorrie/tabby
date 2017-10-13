@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 MODELS = {
     RACE_TYPE_RACING: {
-        # BET_TYPE_QUINELLA: load_model('exotic/v1/models/R40x40Q.h5'),
+        BET_TYPE_EXACTA: load_model('exotic/v2/models/R40x40E.h5'),
     },
     RACE_TYPE_GRAYHOUND: {
         # BET_TYPE_WIN: load_model('each_way/v2/models/G50x50W.h5'),
@@ -36,7 +36,7 @@ def build(bet_type, race_types):
         clear_exotic(race_type, bet_type)
 
         races = load_races(race_type)
-        if bet_type == BET_TYPE_QUINELLA:
+        if bet_type == BET_TYPE_EXACTA:
             r = 2
         else:
             raise Exception(bet_type)
@@ -59,6 +59,7 @@ def build(bet_type, race_types):
 
             # get runners
             runners = race.get_runners()
+
             # remove scratched
             try:
                 runners = [r for r in runners if r['has_odds']]
@@ -67,9 +68,15 @@ def build(bet_type, race_types):
                 print(json.dumps(runners, indent=4, default=str, sort_keys=True))
                 raise
 
+            # sort to combinations instead of permutations
+            runners = sorted(runners, key=itemgetter('win_scaled'), reverse=True)
+
             combs = build_combinations(runners, r)
+            rn = ','.join([str(r['runnerNumber']) for r in runners])
             for comb in combs:
                 comb.update({
+                    'race_id': race.id,
+                    'runner_numbers': rn,
                     'race_type': race_type,
                     'bet_type': bet_type,
                     'res1': res1,
@@ -77,13 +84,15 @@ def build(bet_type, race_types):
                     'res3': res3,
                     'res4': res4,
                 })
-                if bet_type == BET_TYPE_QUINELLA:
+
+                if bet_type == BET_TYPE_EXACTA:
                     success = 1 if comb['run1_num'] == res1 and comb['run2_num'] == res2 else 0
                     comb.update({
                         'success': success,
-                        'dividend': race.quinella,
+                        'dividend': race.exacta,
                     })
                 save_exotic(comb)
+
             logger.info('Adding {} combinations for race {}'.format(len(combs), race))
 
         logger.info('saving...')
@@ -91,20 +100,16 @@ def build(bet_type, race_types):
 
 
 def build_combinations(runners, r):
-    """build combinations of r length"""
-
-    # data rows will be permutations for each bet type
-    # but combinations if sorted (best chance first)
-    runners = sorted(runners, key=itemgetter('win_scaled'), reverse=True)
-    logger.debug('sorted {} runners'.format(len(runners)))
-    combs = combinations(runners, r)
-
     data = []
+    # create combs for box of size 'r' runners
+    combs = combinations(runners, r)
+    # construct data object for every combination
     for comb in combs:
         item = {}
+        # add every runner data in comb
         for i, runner in enumerate(comb):
+            # only add combs with runners that have odds
             if not runner['has_odds']:
-                logger.debug('#{} runner does not have odds'.format(runner['runnerNumber']))
                 break
             item.update({
                 'run{}_num'.format(i + 1): runner['runnerNumber'],
@@ -115,10 +120,12 @@ def build_combinations(runners, r):
                 'run{}_place_scaled'.format(i + 1): runner['place_scaled'],
                 'run{}_place_rank'.format(i + 1): runner['place_rank'],
             })
+        # if broken then a runner does not have odds, and rest (incl add) should be in else
         else:
+            # all runners data added, now add rest or meeting specific data
             item.update({'num_runners': 1 / runner['num_runners']})
             data.append(item)
-    logger.debug('Created {} combs'.format(len(data)))
+
     return data
 
 
@@ -131,14 +138,18 @@ def predict(bet_type, race_types):
 
         # exotics
         exotics = load_exotics(bet_type, race_type)
+        logger.info('Loaded {} exotics for race {} and bet {}'.format(len(exotics), race_type, bet_type))
 
         for i, exotic in enumerate(exotics):
             logger.info('{:.0f}% completed'.format(i / len(exotics) * 100))
             comb = exotic.to_dict()
-            exotic.prediction = make_prediction(comb)
+            make_prediction(comb)
+            exotic.prediction = comb['pred']
+            # break
+        # break
 
-        logger.debug('saving...')
-        db_session.commit()
+    logger.info('saving...')
+    db_session.commit()
 
 
 def make_prediction(comb):
@@ -153,13 +164,13 @@ def make_prediction(comb):
         comb['run2_win_perc'], comb['run2_win_scaled'], comb['run2_win_rank'],
         comb['run2_place_perc'], comb['run2_place_scaled'], comb['run2_place_rank'],
     )]
-    # logger.debug('#{}, {} X={}'.format(comb['run1_num'], comb['run2_num'], x))
+    logger.debug('#{}, {} X={}'.format(comb['run1_num'], comb['run2_num'], x))
 
     # make prediction on data
     preds = mdl.predict(np.array(x))
     prediction = sum(preds[0])
-    # logger.debug('#{}, {} prediction: {:.2f}'.format(comb['run1_num'], comb['run2_num'], prediction))
-    return prediction
+    logger.debug('#{}, {} prediction: {:.2f}'.format(comb['run1_num'], comb['run2_num'], prediction))
+    comb['pred'] = prediction
 
 
 # class ProbabilityError(Exception):

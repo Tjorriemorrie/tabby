@@ -80,7 +80,7 @@ cli.add_command(each_way)
 @click.command()
 @click.argument('version')
 @click.argument('action', type=click.Choice(['build', 'predict']))
-@click.argument('bet_type', type=click.Choice(['Q']))
+@click.argument('bet_type', type=click.Choice(['E']))
 @click.option('-R', 'race_types', flag_value='R', default=False)
 @click.option('-G', 'race_types', flag_value='G', default=False)
 @click.option('-H', 'race_types', flag_value='H', default=False)
@@ -95,6 +95,13 @@ def exotic(ctx, version, action, bet_type, race_types):
             build(bet_type, race_types)
         else:
             from exotic.v1.predict import predict
+            predict(bet_type, race_types)
+    elif version == 'v2':
+        if action == 'build':
+            from exotic.v2.predict import build
+            build(bet_type, race_types)
+        else:
+            from exotic.v2.predict import predict
             predict(bet_type, race_types)
     else:
         raise Exception('Unhandled version number {}'.format(version))

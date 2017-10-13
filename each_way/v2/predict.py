@@ -54,6 +54,7 @@ def run(race_types, odds_only, pred_only):
                 print(json.dumps(race, indent=4, default=str, sort_keys=True))
                 print(json.dumps(runners, indent=4, default=str, sort_keys=True))
                 delete_race(race.id)
+                db_session.commit()
                 raise
             else:
                 race.num_runners = len([r for r in runners if r['has_odds']])
