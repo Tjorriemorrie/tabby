@@ -18,7 +18,7 @@ def cli(ctx, verbose):
 
 
 @click.command()
-@click.argument('table', type=click.Choice(['race', 'exotic']))
+@click.argument('table', type=click.Choice(['race', 'exotic', 'player']))
 @click.pass_context
 def db(ctx, table):
     if table == 'race':
@@ -27,6 +27,9 @@ def db(ctx, table):
     if table == 'exotic':
         from data.exotic import recreate_exotic
         recreate_exotic()
+    if table == 'player':
+        from data.player import recreate_player_db
+        recreate_player_db()
 cli.add_command(db)
 
 
@@ -72,9 +75,34 @@ def each_way(ctx, version, race_types, odds_only, pred_only):
     elif version == 'v2':
         from each_way.v2.predict import run
         run(race_types, odds_only, pred_only)
+    elif version == 'v3':
+        from each_way.v3.predict import run
+        run(race_types, odds_only, pred_only)
     else:
         raise Exception('Unhandled version number {}'.format(version))
 cli.add_command(each_way)
+
+
+@click.command()
+@click.argument('version')
+@click.argument('method', type=click.Choice(['run', 'sim']))
+@click.option('-R', 'race_types', flag_value='R', default=False)
+@click.option('-G', 'race_types', flag_value='G', default=False)
+@click.option('-H', 'race_types', flag_value='H', default=False)
+@click.pass_context
+def trueskill(ctx, version, method, race_types):
+    logger.debug('version: {}'.format(version))
+    logger.debug('method: {}'.format(method))
+    logger.debug('race_types: {}'.format(race_types))
+    if version == 'v1':
+        from ranking.v1.rate import run, sim
+        if method == 'run':
+            run(race_types)
+        elif method == 'sim':
+            sim(race_types)
+    else:
+        raise Exception('Unhandled version number {}'.format(version))
+cli.add_command(trueskill)
 
 
 @click.command()

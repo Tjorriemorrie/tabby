@@ -12,3 +12,4 @@ tensorflow
 seaborn
 scikit-learn
 halo
+trueskill

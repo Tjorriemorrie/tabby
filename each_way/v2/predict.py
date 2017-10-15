@@ -50,6 +50,7 @@ def run(race_types, odds_only, pred_only):
             except OddsError as e:
                 logger.warning(e)
                 delete_race(race.id)
+                db_session.commit()
             except (Exception, ProbabilityError):
                 print(json.dumps(race, indent=4, default=str, sort_keys=True))
                 print(json.dumps(runners, indent=4, default=str, sort_keys=True))

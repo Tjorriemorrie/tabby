@@ -147,6 +147,8 @@ def load_races(category):
     if category:
         sql = sql.filter(Race.race_type == category)
 
+    sql.order_by(Race.race_start_time.asc())
+
     return sql.all()
 
 

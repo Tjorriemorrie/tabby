@@ -104,6 +104,7 @@ def next_to_go(race_types, each_way, oncely, make_bets):
                         runners, num_bets_place = bet_method(runners, bet_chunk, RACE_TYPE_HARNESS, bet_type)
         except Exception as e:
             logger.warning(e)
+            raise
             continue
 
         details = get_details(next_race)
@@ -361,5 +362,13 @@ def load_each_way(version):
         from each_way.v2.predict import add_odds, add_predictions, add_probabilities
         from each_way.v2.betting import bet_positive_dutch
         return add_odds, add_predictions, add_probabilities, bet_positive_dutch
+    elif version == 'v3':
+        from each_way.v3.predict import add_odds, add_predictions, add_probabilities
+        from each_way.v3.betting import bet_direct
+        return add_odds, add_predictions, add_probabilities, bet_direct
+    elif version == 'v4':
+        from each_way.v2.predict import add_odds
+        from ranking.v1.rate import add_ratings, add_probabilities, add_bets
+        return add_odds, add_ratings, add_probabilities, add_bets
     else:
         raise ValueError('Unexpected version for each way {}'.format(version))
