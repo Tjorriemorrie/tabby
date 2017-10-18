@@ -2,7 +2,7 @@ import json
 import logging
 
 import arrow
-from sqlalchemy import Column, Integer, String, DateTime, Float, Date, Text
+from sqlalchemy import func, Column, Integer, String, DateTime, Float, Date, Text
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -40,10 +40,10 @@ class Player(Base):
     race_type = Column(String(250))
     meeting_name = Column(String(250))
     race_number = Column(Integer)
-    raced_at = Column(DateTime)
+    raced_at = Column(DateTime, index=True)
 
     # runner info
-    name = Column(String(250))
+    name = Column(String(250), index=True)
     cnt = Column(Integer)
     pos = Column(Integer)
     rating_m_prev = Column(Float)
@@ -83,7 +83,7 @@ def delete_race_type(race_type):
     db_session.commit()
 
 
-def save_players(race, parts, new_ratings):
+def save_players(race, parts, new_ratings, cache):
     """save new ratings from race"""
     for p, n in zip(parts, new_ratings):
         logger.debug('creating new player...')
@@ -105,5 +105,17 @@ def save_players(race, parts, new_ratings):
         logger.debug('{} got {}. rating from {} to {}'.format(
             player.name, player.pos, p['rating'], n[0]))
 
-    logger.debug('Saving...')
-    db_session.commit()
+        # update cache
+        cache[p['runnerName']] = player
+
+    # logger.debug('Saving...')
+    # db_session.commit()
+
+
+def get_last_player_date(race_type):
+    """Max date for race type"""
+    return db_session.query(
+        func.max(Player.raced_at)
+    ).filter(
+        Player.race_type == race_type
+    ).scalar()

@@ -85,21 +85,18 @@ cli.add_command(each_way)
 
 @click.command()
 @click.argument('version')
-@click.argument('method', type=click.Choice(['run', 'sim']))
+@click.option('--force', 'force', is_flag=True)
 @click.option('-R', 'race_types', flag_value='R', default=False)
 @click.option('-G', 'race_types', flag_value='G', default=False)
 @click.option('-H', 'race_types', flag_value='H', default=False)
 @click.pass_context
-def trueskill(ctx, version, method, race_types):
+def trueskill(ctx, version, force, race_types):
     logger.debug('version: {}'.format(version))
-    logger.debug('method: {}'.format(method))
+    logger.debug('force: {}'.format(force))
     logger.debug('race_types: {}'.format(race_types))
     if version == 'v1':
-        from ranking.v1.rate import run, sim
-        if method == 'run':
-            run(race_types)
-        elif method == 'sim':
-            sim(race_types)
+        from ranking.v1.rate import run
+        run(race_types, force)
     else:
         raise Exception('Unhandled version number {}'.format(version))
 cli.add_command(trueskill)

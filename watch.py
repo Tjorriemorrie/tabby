@@ -68,6 +68,7 @@ def next_to_go(race_types, each_way, oncely, make_bets):
             add_probabilities(runners)
         except Exception as e:
             logger.warning(e)
+            raise
             continue
 
         # drop scratched
@@ -295,6 +296,7 @@ def check_for_results():
             logger.debug('results for race {}'.format(results))
 
             net = 0
+            chunk = 0
             table_data = [['Pos', '#', 'Win', 'Place', 'Bets', 'Net']]
             for dr in details['runners']:
                 pos = results.index(dr['runnerNumber']) + 1 if dr['runnerNumber'] in results else ''
@@ -316,6 +318,7 @@ def check_for_results():
                         if not r.get(key):
                             continue
                         bet = r[key]
+                        chunk += bet
                         bets.append('{}: {:.2f}'.format(bet_type, bet))
                         div = get_dividend(details['dividends'], r['runnerNumber'], bet_type)
                         payout = bet * div - bet
@@ -330,7 +333,7 @@ def check_for_results():
                 row.append('{:.2f}'.format(payouts) if payouts else '-')
                 table_data.append(row)
             # net
-            table_data.append(['', '', '', '', 'Total', '{:.2f}'.format(net)])
+            table_data.append(['', '', '', 'Total', '{:.2f}'.format(chunk), '{:.2f}'.format(net)])
             # print table
             print('\n')
             print(SingleTable(table_data, title='Bet slip for {}'.format(title)).table)
@@ -368,7 +371,7 @@ def load_each_way(version):
         return add_odds, add_predictions, add_probabilities, bet_direct
     elif version == 'v4':
         from each_way.v2.predict import add_odds
-        from ranking.v1.rate import add_ratings, add_probabilities, add_bets
-        return add_odds, add_ratings, add_probabilities, add_bets
+        from ranking.v1.rate import add_ratings, add_probabilities, bet_dutch
+        return add_odds, add_ratings, add_probabilities, bet_dutch
     else:
         raise ValueError('Unexpected version for each way {}'.format(version))

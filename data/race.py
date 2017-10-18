@@ -139,7 +139,7 @@ def save_race(race):
     db_session.commit()
 
 
-def load_races(category):
+def load_races(category, since=None):
     logger.info('Loading races for {}...'.format(category))
 
     sql = db_session.query(Race)
@@ -147,7 +147,10 @@ def load_races(category):
     if category:
         sql = sql.filter(Race.race_type == category)
 
-    sql.order_by(Race.race_start_time.asc())
+    if since:
+        sql = sql.filter(Race.race_start_time > since)
+
+    sql = sql.order_by(Race.race_start_time.asc())
 
     return sql.all()
 
