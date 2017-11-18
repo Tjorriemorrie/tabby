@@ -68,7 +68,6 @@ def next_to_go(race_types, each_way, oncely, make_bets):
             add_probabilities(runners)
         except Exception as e:
             logger.warning(e)
-            raise
             continue
 
         # drop scratched
@@ -117,36 +116,39 @@ def next_to_go(race_types, each_way, oncely, make_bets):
             logger.info('No bettable runners on {} {}\n'.format(
                 details['meeting']['meetingName'], details['raceNumber']))
             continue
+        logger.debug('Making {} win bets and {} place bets on {} runners'.format(num_bets_win, num_bets_place, len(runners)))
 
+        runners.sort(key=lambda r: r.get('rating_prob', 0), reverse=True)
         next_race['runners'] = runners
         next_race['status'] = 'betting'
 
         # RACES
-        race_table = [['Type', 'Meeting', 'Race', '#', 'Start Time', 'status']]
-        cnt = 0
-        for race in list(data.values()):
-            if race['status'] == 'upcoming':
-                cnt += 1
-                race_table.append([
-                    race['meeting']['raceType'],
-                    race['meeting']['meetingName'],
-                    race['raceName'],
-                    race['raceNumber'],
-                    race['raceStartTime'].humanize(),
-                    race['status']
-                ])
-            if cnt > 6:
-                break
-        print('\n')
-        print(SingleTable(race_table, title='Races').table)
+        # race_table = [['Type', 'Meeting', 'Race', '#', 'Start Time', 'status']]
+        # cnt = 0
+        # for race in list(data.values()):
+        #     if race['status'] == 'upcoming':
+        #         cnt += 1
+        #         race_table.append([
+        #             race['meeting']['raceType'],
+        #             race['meeting']['meetingName'],
+        #             race['raceName'],
+        #             race['raceNumber'],
+        #             race['raceStartTime'].humanize(),
+        #             race['status']
+        #         ])
+        #     if cnt > 6:
+        #         break
+        # print('\n')
+        # print(SingleTable(race_table, title='Races').table)
 
         # RUNNERS
-        runner_table = [['Name',
+        runner_table = [['Name', 'Rating',
                          '#', 'W Odds', 'W Prob', 'W Bet',
                          '#', 'P Odds', 'P Prob', 'P Bet']]
         for runner in runners:
             runner_row = [
                 runner['runnerName'],
+                '{:.0f}/{}'.format(runner['rating_mu'], runner['cnt']),
             ]
             # win
             prob = '{}_prob'.format(BET_TYPE_WIN)
@@ -233,8 +235,8 @@ def get_next_race():
             elif race['raceStartTime'] < start:
                 next_race = race
                 start = race['raceStartTime']
-    logger.info('next race {} R{} start at {}'.format(
-        next_race['meeting']['meetingName'], next_race['raceNumber'], start))
+    logger.info('next race [{}] {} R{} start at {}'.format(
+        next_race['meeting']['raceType'], next_race['meeting']['meetingName'], next_race['raceNumber'], start))
     return next_race
 
 
@@ -285,19 +287,23 @@ def check_for_results():
 
             if not details.get('results'):
                 logger.info('No results yet for {}'.format(title))
+                time_ago = arrow.utcnow() - race['raceStartTime']
+                if time_ago.total_seconds() > 60 * 15:
+                    race['status'] = 'finished'
+                    logger.warning('{} no results after 15 minutes!!'.format(title))
                 return
 
             if not details.get('dividends'):
                 logger.info('No dividends yet for {}'.format(title))
                 return
 
-            runners = sorted([r for r in runners if r['has_odds']], key=itemgetter('win_odds'))
+            # runners = sorted([r for r in runners if r['has_odds']], key=itemgetter('win_odds'))
             results = [num for grp in details['results'] for num in grp]
             logger.debug('results for race {}'.format(results))
 
             net = 0
             chunk = 0
-            table_data = [['Pos', '#', 'Win', 'Place', 'Bets', 'Net']]
+            table_data = [['Pos', 'Rating', '#', 'Win', 'Place', 'Bets', 'Net']]
             for dr in details['runners']:
                 pos = results.index(dr['runnerNumber']) + 1 if dr['runnerNumber'] in results else ''
                 logger.debug('#{} pos = {}'.format(dr['runnerNumber'], pos))
@@ -315,6 +321,7 @@ def check_for_results():
                     r = [r for r in runners if r['runnerNumber'] == dr['runnerNumber']][0]
                     for bet_type in BET_TYPES:
                         key = '{}_bet'.format(bet_type)
+                        logger.debug('#{} has {} of {}'.format(r['runnerNumber'], key, r.get(key)))
                         if not r.get(key):
                             continue
                         bet = r[key]
@@ -331,9 +338,13 @@ def check_for_results():
                 # add bet results or nothing
                 row.append(' & '.join(bets) if bets else '-')
                 row.append('{:.2f}'.format(payouts) if payouts else '-')
+                try:
+                    row.insert(1, '{:.0f}/{}'.format(r.get('rating_mu', 25), r.get('cnt', 0)))
+                except UnboundLocalError:
+                    row.insert(1, '')
                 table_data.append(row)
             # net
-            table_data.append(['', '', '', 'Total', '{:.2f}'.format(chunk), '{:.2f}'.format(net)])
+            table_data.append(['', '', '', '', 'Total', '{:.2f}'.format(chunk), '{:.2f}'.format(net)])
             # print table
             print('\n')
             print(SingleTable(table_data, title='Bet slip for {}'.format(title)).table)
@@ -366,9 +377,8 @@ def load_each_way(version):
         from each_way.v2.betting import bet_positive_dutch
         return add_odds, add_predictions, add_probabilities, bet_positive_dutch
     elif version == 'v3':
-        from each_way.v3.predict import add_odds, add_predictions, add_probabilities
-        from each_way.v3.betting import bet_direct
-        return add_odds, add_predictions, add_probabilities, bet_direct
+        from each_way.v3.predict import add_odds, add_predictions, add_probabilities, bet_positive_dutch
+        return add_odds, add_predictions, add_probabilities, bet_positive_dutch
     elif version == 'v4':
         from each_way.v2.predict import add_odds
         from ranking.v1.rate import add_ratings, add_probabilities, bet_dutch

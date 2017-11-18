@@ -76,7 +76,7 @@ def load_player(name):
     return sql.first()
 
 
-def delete_race_type(race_type):
+def delete_race_players(race_type):
     """delete race type"""
     logger.info('deleting {}'.format(race_type))
     db_session.query(Player).filter(Player.race_type == race_type).delete()
@@ -86,7 +86,6 @@ def delete_race_type(race_type):
 def save_players(race, parts, new_ratings, cache):
     """save new ratings from race"""
     for p, n in zip(parts, new_ratings):
-        logger.debug('creating new player...')
         player = Player()
         db_session.add(player)
 
@@ -97,13 +96,13 @@ def save_players(race, parts, new_ratings, cache):
         player.raced_at = race.race_start_time
         player.name = p['runnerName']
         player.cnt = p['cnt']
-        player.pos = p['rank']
-        player.rating_m_prev = p['rating'].mu
-        player.rating_s_prev = p['rating'].sigma
+        player.pos = p['pos']
+        player.rating_m_prev = p['rating_mu']
+        player.rating_s_prev = p['rating_sigma']
         player.rating_m = n[0].mu
         player.rating_s = n[0].sigma
         logger.debug('{} got {}. rating from {} to {}'.format(
-            player.name, player.pos, p['rating'], n[0]))
+            player.name, player.pos, p['rating_mu'], n[0]))
 
         # update cache
         cache[p['runnerName']] = player

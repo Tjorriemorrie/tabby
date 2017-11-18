@@ -46,7 +46,7 @@ cli.add_command(scrape)
 
 @click.command()
 @click.argument('race_types', nargs=-1)
-@click.option('--each_way', default='v2', help='version for each way')
+@click.option('--each_way', default='v3', help='version for each way')
 @click.option('--oncely', is_flag=True, help='only run once')
 @click.option('--bet', is_flag=True, help='make real bets')
 @click.pass_context
@@ -58,17 +58,19 @@ cli.add_command(watch)
 
 @click.command()
 @click.argument('version')
+@click.option('--force', 'force', is_flag=True)
 @click.option('-R', 'race_types', flag_value='R', default=False)
 @click.option('-G', 'race_types', flag_value='G', default=False)
 @click.option('-H', 'race_types', flag_value='H', default=False)
 @click.option('--odds_only', is_flag=True)
 @click.option('--pred_only', is_flag=True)
 @click.pass_context
-def each_way(ctx, version, race_types, odds_only, pred_only):
+def each_way(ctx, version, force, race_types, odds_only, pred_only):
     logger.debug('version: {}'.format(version))
     logger.debug('race_types: {}'.format(race_types))
     logger.debug('odds_only: {}'.format(odds_only))
     logger.debug('pred_only: {}'.format(pred_only))
+    logger.debug('force: {}'.format(force))
     if version == 'v1':
         from each_way.v1.predict import run
         run(race_types, odds_only, pred_only)
@@ -77,29 +79,10 @@ def each_way(ctx, version, race_types, odds_only, pred_only):
         run(race_types, odds_only, pred_only)
     elif version == 'v3':
         from each_way.v3.predict import run
-        run(race_types, odds_only, pred_only)
+        run(race_types, odds_only, pred_only, force)
     else:
         raise Exception('Unhandled version number {}'.format(version))
 cli.add_command(each_way)
-
-
-@click.command()
-@click.argument('version')
-@click.option('--force', 'force', is_flag=True)
-@click.option('-R', 'race_types', flag_value='R', default=False)
-@click.option('-G', 'race_types', flag_value='G', default=False)
-@click.option('-H', 'race_types', flag_value='H', default=False)
-@click.pass_context
-def trueskill(ctx, version, force, race_types):
-    logger.debug('version: {}'.format(version))
-    logger.debug('force: {}'.format(force))
-    logger.debug('race_types: {}'.format(race_types))
-    if version == 'v1':
-        from ranking.v1.rate import run
-        run(race_types, force)
-    else:
-        raise Exception('Unhandled version number {}'.format(version))
-cli.add_command(trueskill)
 
 
 @click.command()

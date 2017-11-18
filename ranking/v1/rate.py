@@ -15,11 +15,9 @@ from trueskill import Rating, rate, setup, quality, global_env
 
 from constants import *
 from data.race import load_races, delete_race, db_session
-from data.player import load_player, delete_race_type, save_players, db_session as player_session, get_last_player_date
+from data.player import load_player, delete_race_players, save_players, db_session as player_session, get_last_player_date
 
 logger = logging.getLogger(__name__)
-
-setup(backend='scipy')
 
 
 def run(race_types, force):
@@ -30,7 +28,7 @@ def run(race_types, force):
 
         # force truncate
         if force:
-            delete_race_type(race_type)
+            delete_race_players(race_type)
             races = load_races(race_type)
             logger.info('loaded {} races...'.format(len(races)))
         # continue for new races
