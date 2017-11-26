@@ -340,53 +340,55 @@ X = {
         # $0.09 profit per race     7% of races 1441 / 19348    [6.183, 2.992, 3.967],  0.2
         # $0.08 profit per race     6% of races 1202 / 19348    [4.138, 1.028, 5.706],  0.3
         # $0.05 profit per race     21% of races 4001 / 19362   [7.24, 2.908, 0.],      0.4
-        # $0.08 profit per race     11% of races 2204 / 19588
-        BET_TYPE_WIN: [2.658, 3.581, 6.256],
-        # $1.18 profit per race     35% of races 6527 / 18799   [0.702],
+        # $0.08 profit per race     11% of races 2204 / 19588   [2.658, 3.581, 6.256],  0.5
+        # $0.07 profit per race     9% of races 1766 / 19588
+        BET_TYPE_WIN: [9.295, 3.717, -0.],
         # $0.69 profit per race     38% of races 8947 / 23559   [0.539],
         # $0.89 profit per race     6% of races 1127 / 19348    [0., 1.818, 3.561],     0.01
         # $1.11 profit per race     14% of races 2725 / 19348   [-0., 1.2, 2.414],      0.1
         # $1.29 profit per race     24% of races 4661 / 19348   [1., 2., 1.],           0.2
         # $1.28 profit per race     20% of races 3859 / 19362   [-0., 6.597, 1.098],    0.3
-        # $1.38 profit per race     25% of races 4904 / 19453
-        BET_TYPE_PLACE: [6.128, 0., 0.947],
+        # $1.38 profit per race     25% of races 4904 / 19453   [6.128, 0., 0.947],     0.4
+        # $1.39 profit per race     30% of races 5877 / 19588
+        BET_TYPE_PLACE: [3.567, -0., 0.889],
     },
     RACE_TYPE_GRAYHOUND: {
-        # $0.19 profit per race     5% of races 1155 / 24849    [3.408],
         # $0.27 profit per race     15% of races 3539 / 23559   [2.659],
         # $0.12 profit per race     1% of races 244 / 24178     [5.256, 1.774, 7.168],  0.01
         # $0.16 profit per race     22% of races 5381 / 24178   [1.168, 5.818, 2.339],  0.1
         # $0.15 profit per race     9% of races 2101 / 24178    [3.027, 4.102, 3.026],  0.2
         # $0.16 profit per race     3% of races 659 / 24179     [2., 3.999, 6.299],     0.3
-        # $0.25 profit per race     5% of races 1273 / 24285
-        BET_TYPE_WIN: [2.859, 4.771, 3.346],
-        # $0.70 profit per race     47% of races 11687 / 24731  [0.413],
+        # $0.25 profit per race     5% of races 1273 / 24285    [2.859, 4.771, 3.346],  0.4
+        # $0.24 profit per race     14% of races 3454 / 24406   [7.216, 2.679, 1.768],  0.5
+        # $0.24 profit per race     12% of races 2981 / 24406
+        BET_TYPE_WIN: [1.845, 4.5, 2.767],
         # $0.67 profit per race     37% of races 9332 / 25038   [0.591],
         # $0.11 profit per race     0% of races 54 / 24178      [5.367, 3.889, 4.667],  0.01
         # $0.53 profit per race     9% of races 2224 / 24178    [0., 1.136, 2.422],     0.1
         # $0.58 profit per race     14% of races 3479 / 24178   [-0., 5.473, 0.944],    0.2
         # $0.57 profit per race     14% of races 3499 / 24179   [0., 0.979, 1.997],     0.3
-        # $0.59 profit per race     12% of races 2895 / 24285
-        BET_TYPE_PLACE: [7.024, 0., 1.024],
+        # $0.59 profit per race     12% of races 2895 / 24285   [7.024, 0., 1.024],     0.4
+        # $0.66 profit per race     19% of races 4682 / 24406
+        BET_TYPE_PLACE: [2.717, 0., 0.882],
     },
     RACE_TYPE_HARNESS: {
-        # $0.21 profit per race     10% of races 1647 / 15865   [2.801],
-        # $0.22 profit per race     15% of races 2401 / 15949   [2.577],
         # $0.22 profit per race     6% of races 921 / 15007     [3.318],
         # $0.16 profit per race     5% of races 796 / 15399     [7.085, 3.5, 3.501],    0.01
         # $0.15 profit per race     16% of races 2490 / 15399   [2.326, 3.504, 2.414],  0.1
         # $0.16 profit per race     8% of races 1308 / 15399    [3.075, 7.175, 0.962],  0.2
         # $0.08 profit per race     28% of races 4359 / 15404   [2., 2., 5.25],         0.3
-        # $0.18 profit per race     8% of races 1176 / 15467
-        BET_TYPE_WIN: [3.093, 4.123, 3.106],
-        # $0.88 profit per race     35% of races 5643 / 16027   [0.521],
+        # $0.18 profit per race     8% of races 1176 / 15467    [3.093, 4.123, 3.106],  0.4
+        # $0.17 profit per race     5% of races 724 / 15540     [6.117, 3.616, 3.421],  0.5
+        # $0.15 profit per race     10% of races 1504 / 15540
+        BET_TYPE_WIN: [5.146, 1.797, 2.94],
         # $0.84 profit per race     51% of races 7589 / 15007   [0.35],
         # $0.37 profit per race     98% of races 15028 / 15399  [1.808, -0., 0.],       0.01
         # $0.56 profit per race     10% of races 1549 / 15399   [1.136, 4.592, 0.],     0.1
         # $0.63 profit per race     12% of races 1872 / 15399   [1., 2., 1.],           0.2
         # $0.71 profit per race     15% of races 2339 / 15404   [-0., 4.255, 0.97],     0.3
-        # $0.71 profit per race     15% of races 2361 / 15540
-        BET_TYPE_PLACE: [0., 3.158, 0.991],
+        # $0.71 profit per race     15% of races 2361 / 15540   [0., 3.158, 0.991],     0.4
+        # $0.86 profit per race     20% of races 3083 / 15540
+        BET_TYPE_PLACE: [2.665, 0., 0.89],
     },
 }
 

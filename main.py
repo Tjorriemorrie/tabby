@@ -116,5 +116,15 @@ def exotic(ctx, version, action, bet_type, race_types):
 cli.add_command(exotic)
 
 
+@click.command()
+@click.option('-b', '--balance', default=1000, type=click.INT, help='starting balance')
+@click.option('-t', '--target', default=0.1, type=click.FLOAT, help='percentage value of balance')
+@click.pass_context
+def martin(ctx, balance, target):
+    from martin.main import run
+    run(balance, target)
+cli.add_command(martin)
+
+
 if __name__ == '__main__':
     cli(obj={})
