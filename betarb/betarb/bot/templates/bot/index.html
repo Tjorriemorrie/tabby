@@ -1,0 +1,13 @@
+{% extends 'bot/base.html' %}
+{% load static %}
+
+
+{% block content %}
+<p>html</p>
+{% endblock %}
+
+
+{% block javascripts %}
+    {{ block.super }}
+    <script src="{% static "bot/js/socket.js" %}"></script>
+{% endblock %}

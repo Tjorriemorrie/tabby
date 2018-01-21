@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'bot.apps.BotConfig',
     'betfair.apps.BetfairConfig',
     'tab.apps.TabConfig',
     'django.contrib.admin',
@@ -41,6 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django_celery_results',
     'django_celery_beat',
+    'channels',
 ]
 
 MIDDLEWARE = [
@@ -84,6 +86,21 @@ DATABASES = {
     }
 }
 
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': '/var/tmp/django_cache',
+        'TIMEOUT': 3600 * 16,
+    }
+}
+
+CHANNEL_LAYERS = {
+    "default": {
+        # "BACKEND": "asgiref.inmemory.ChannelLayer",
+        "BACKEND": "asgi_redis.RedisChannelLayer",
+        "ROUTING": "betarb.routing.channel_routing",
+    },
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/2.0/ref/settings/#auth-password-validators
@@ -125,3 +142,8 @@ STATIC_URL = '/static/'
 
 CELERY_BROKER_URL = 'amqp://guest:guest@localhost:5672/'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERYD_HIJACK_ROOT_LOGGER = False
+# use json format for everything
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'

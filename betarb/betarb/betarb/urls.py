@@ -17,6 +17,7 @@ from django.urls import include, path
 from django.contrib import admin
 
 urlpatterns = [
+    path('', include('bot.urls')),
     path('betfair/', include('betfair.urls')),
     path('tab/', include('tab.urls')),
     path('admin/', admin.site.urls),

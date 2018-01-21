@@ -13,3 +13,5 @@ seaborn
 scikit-learn
 halo
 trueskill
+django
+celery
