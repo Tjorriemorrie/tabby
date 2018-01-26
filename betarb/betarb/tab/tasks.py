@@ -284,12 +284,12 @@ def bucket():
         df['cats'] = pd.qcut(df['win_perc'], bins)
         flag_exit = False
         for name, grp in df.groupby('cats'):
+
             # linear regression for coefficients
             ols = LinearRegression().fit(
                 grp['win_perc'].values.reshape(-1, 1),
                 grp['won'].values.reshape(-1, 1))
-            logger.warning(ols.coef_)
-            logger.warning(ols.intercept_)
+
             # create bucket from bin group
             bucket = Bucket.objects.create(
                 bins=bins,
@@ -301,13 +301,14 @@ def bucket():
                 coef=ols.coef_[0],
                 intercept=ols.intercept_,
             )
+
             # check flag
             if bucket.count < 10:
                 flag_exit = True
 
         if flag_exit:
             break
-    logger.warning(f'Created at most {bins} buckets')
+    logger.warning(f'Created max {bins} buckets')
 
 
 '''

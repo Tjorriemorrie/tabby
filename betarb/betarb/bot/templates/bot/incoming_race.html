@@ -26,7 +26,7 @@
                 <td>Est %</td>
                 <td>Given %</td>
                 <td>Change</td>
-                <td colspan="10">Win odds</td>
+                <td colspan="5">Win odds</td>
             </tr>
             </thead>
             <tbody>
@@ -39,9 +39,9 @@
                         {{ r.name }}
                     {% endif %}</td>
                     {% if r.fixed_betting_status != 'Open' %}
-                        <td colspan="13"></td>
+                        <td colspan="8"></td>
                     {% else %}
-                        <td>{{ r.fo.first.bucket.win_mean|percentage }}</td>
+                        <td>{{ r.fo.first.win_est|percentage }}</td>
                         <td>{{ r.fo.first.win_perc|percentage }}</td>
                         <td>{{ r.odds_change|percentage:0 }}</td>
                         {% for fo in r.fo %}

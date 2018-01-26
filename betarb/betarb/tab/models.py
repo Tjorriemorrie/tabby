@@ -73,11 +73,11 @@ class Runner(models.Model):
     parimutuel_betting_status = models.CharField(max_length=20, null=True)
 
     def fo(self):
-        return self.fixedodd_set.all()[:10]
+        return self.fixedodd_set.all()[:5]
 
     def odds_change(self):
         first = self.fixedodd_set.first()
-        last = list(self.fixedodd_set.all()[:10])[-1]
+        last = list(self.fixedodd_set.all()[:5])[-1]
         first_perc = 1 / first.win_dec
         last_perc = 1 / last.win_dec
         return (first_perc - last_perc) / last_perc
@@ -102,6 +102,15 @@ class FixedOdd(models.Model):
     @property
     def win_perc(self):
         return 1 / self.win_dec if self.win_dec else 0
+
+    @property
+    def win_est(self):
+        """Give win est for given win_perc"""
+        if not self.win_dec:
+            return 0
+        bucket = self.bucket
+        est = bucket.coef * self.win_perc + bucket.intercept
+        return max(0, min(1, est))
 
 
 class ParimutuelOdd(models.Model):
