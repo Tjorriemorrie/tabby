@@ -1,0 +1,31 @@
+{% load percentage %}
+<div id="sidebar">
+    <h2>Tab</h2>
+    <p>Races: {{ bucket_overall.count }}</p>
+    <p>Buckets</p>
+    <table border="1" cellspacing="1">
+        <thead>
+        <tr>
+            <td>Bucket</td>
+            <td>Size</td>
+            <td>Wins</td>
+            <td>Win mean</td>
+            <td>Coef</td>
+            <td>Intercept</td>
+        </tr>
+        </thead>
+        <tbody>
+        {% for bucket in buckets %}
+            <tr>
+                <td>{{ bucket.left|percentage }} &mdash; {{ bucket.right|percentage }}</td>
+                <td>{{ bucket.total }}</td>
+                <td>{{ bucket.count }}</td>
+                <td>{{ bucket.win_mean|percentage }}</td>
+                <td>{{ bucket.coef|floatformat:2 }}</td>
+                <td>{{ bucket.intercept|floatformat:2 }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </dl>
+</div>

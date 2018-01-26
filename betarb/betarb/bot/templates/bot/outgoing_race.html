@@ -1,0 +1,24 @@
+<div id="race_{{ race.pk }}">
+    <div class="race_header">
+        <span class="venue"><a href="{{ race.link_self }}" target="_blank">
+            [{{ race.meeting.location }}]
+            [{{ race.meeting.race_type }}]
+            {{ race.meeting.name }} &mdash;
+            {{ race.number }}
+        </a></span>
+        <span class="title">
+            {{ race.name|title }}
+        </span>
+        <span class="time">{{ race.start_time|timesince }}</span>
+    </div>
+
+    <div class="race_body">
+        {% if not race.result_set.all %}
+            <p>no results yet</p>
+        {% else %}
+            {% for res in race.result_set.all %}
+                <p>{{ res.pos }} {{ res.runner.runner_number }} {{ res.runner.name }}</p>
+            {% endfor %}
+        {% endif %}
+    </div>
+</div>

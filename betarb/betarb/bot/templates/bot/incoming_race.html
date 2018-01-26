@@ -1,0 +1,57 @@
+{% load percentage %}
+<div id="race_{{ race.pk }}">
+
+    <div class="race_header">
+        <span class="venue"><a href="{{ race.link_self }}" target="_blank">
+            [{{ race.meeting.location }}]
+            [{{ race.meeting.race_type }}]
+            {{ race.meeting.name }} &mdash;
+            {{ race.number }}
+        </a></span>
+        <span class="title">
+            {{ race.name|title }}
+        </span>
+        <span class="time">
+            {{ race.start_time|time:"H:i" }} &mdash;
+            {{ race.start_time|timeuntil }}
+        </span>
+    </div>
+
+    <div class="race_body">
+        <table cellpadding="1" border="1">
+            <thead>
+            <tr>
+                <td>Number</td>
+                <td>Name</td>
+                <td>Est %</td>
+                <td>Given %</td>
+                <td>Change</td>
+                <td colspan="10">Win odds</td>
+            </tr>
+            </thead>
+            <tbody>
+            {% for r in race.runner_set.all %}
+                <tr>
+                    <td>{{ r.runner_number }}</td>
+                    <td>{% if r.fixed_betting_status != 'Open' %}
+                        <del>{{ r.name }}</del>
+                    {% else %}
+                        {{ r.name }}
+                    {% endif %}</td>
+                    {% if r.fixed_betting_status != 'Open' %}
+                        <td colspan="13"></td>
+                    {% else %}
+                        <td>{{ r.fo.first.bucket.win_mean|percentage }}</td>
+                        <td>{{ r.fo.first.win_perc|percentage }}</td>
+                        <td>{{ r.odds_change|percentage:0 }}</td>
+                        {% for fo in r.fo %}
+                            <td>{{ fo.win_dec }}</td>
+                        {% endfor %}
+                    {% endif %}
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>

@@ -3,11 +3,22 @@
 
 
 {% block content %}
-<p>html</p>
+<div class="container">
+    {% include 'bot/incoming_list.html' %}
+    {% include 'bot/outgoing_list.html' %}
+    {% include 'bot/sidebar.html' %}
+</div>
+{% endblock %}
+
+
+{% block stylesheets %}
+    {{ block.super }}
+    <link href="{% static 'bot/css/bot.css' %}" rel="stylesheet"/>
 {% endblock %}
 
 
 {% block javascripts %}
     {{ block.super }}
-    <script src="{% static "bot/js/socket.js" %}"></script>
+{#    <script src="{% static "bot/js/socket.js" %}"></script>#}
+    <script>setTimeout(() => window.location.reload(), 60 * 1000);</script>
 {% endblock %}

@@ -1,3 +1,4 @@
+channels
 click
 requests
 pandas
@@ -14,4 +15,7 @@ scikit-learn
 halo
 trueskill
 django
-celery
+celery[redis]
+django-celery-results
+django-celery-beat
+asgi-redis
