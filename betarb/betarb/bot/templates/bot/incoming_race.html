@@ -19,15 +19,15 @@
 
     <div class="race_header">
         <span>Betfair</span>
-        {% if not race.betfair_event %}
+        {% if not race.win_market %}
+            <span>&mdash;</span>
             <span>&mdash;</span>
             <span>&mdash;</span>
         {% else %}
-            <span>ID: {{ race.betfair_event.event_id }}</span>
-            <span>{{ race.betfair_event.market_set.all|length }} markets</span>
-            <span>{% for market in race.betfair_event.market_set.all %}
-                [{{ market.type }} {{ market.market_id }}]
-            {% endfor %}</span>
+            <span>event: {{ race.win_market.event.event_id }}</span>
+            <span>market: {{ race.win_market.market_id }}</span>
+            <span>matched: {{ race.win_market.book_set.last.total_matched|floatformat:0 }}</span>
+            <span>{{ race.win_market.book_set.last.last_match_time|time:'H:i:s' }}</span>
         {% endif %}
     </div>
 
@@ -38,10 +38,9 @@
                 <td>Number</td>
                 <td>Name</td>
                 <td class="blue">Back</td>
+                <td class="green">Tab</td>
                 <td>Est</td>
                 <td class="pink">Lay</td>
-                <td colspan="5">Win odds</td>
-                <td>Change</td>
             </tr>
             </thead>
             <tbody>
@@ -54,15 +53,12 @@
                         {{ r.name }}
                     {% endif %}</td>
                     {% if r.fixed_betting_status != 'Open' %}
-                        <td colspan="9"></td>
+                        <td colspan="4"></td>
                     {% else %}
-                        <td class="blue">{{ r.fo.first.win_back|odds }}</td>
+                        <td class="blue">{{ r.lay|odds }}</td>
+                        <td class="green">{{ r.fo.first.win_dec|odds }}</td>
                         <td>{{ r.fo.first.win_est|as_odds|odds }}</td>
-                        <td class="pink">{{ r.fo.first.win_lay|odds }}</td>
-                        {% for fo in r.fo %}
-                            <td>{{ fo.win_dec }}</td>
-                        {% endfor %}
-                        <td>{{ r.odds_change|percentage:0 }}</td>
+                        <td class="pink">{{ r.back|odds }}</td>
                     {% endif %}
                 </tr>
             {% endfor %}

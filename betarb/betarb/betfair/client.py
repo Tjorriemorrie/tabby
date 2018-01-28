@@ -1,27 +1,20 @@
 import datetime
 import json
-from django.utils import timezone
+
 import requests
 from betfairlightweight import APIClient
 from betfairlightweight.endpoints.baseendpoint import BaseEndpoint
 from betfairlightweight.filters import market_filter
 from betfairlightweight.filters import price_projection, price_data, time_range
+from django.utils import timezone
 
-from .secrets import APP_CERTS, APP_KEY_DEV, APP_URL_LOGIN, USERNAME, PASSWORD
-
-s = requests.Session()
-# s.cert = APP_CERT
-s.headers.update({
-    'X-Application': APP_KEY_DEV,
-    'Accept-Encoding': 'gzip, deflate',
-    'Connection': 'keep-alive',
-})
+from .secrets import APP_KEY_DEV, APP_URL_LOGIN, USERNAME, PASSWORD, APP_CERTS_DIR
 
 
 BaseEndpoint.connect_timeout = 5
 BaseEndpoint.read_timeout = 15
 
-trading = APIClient(USERNAME, PASSWORD, APP_KEY_DEV, APP_CERTS)
+trading = APIClient(USERNAME, PASSWORD, APP_KEY_DEV, APP_CERTS_DIR)
 
 ET_HORSE_RACING = 7
 ET_GREYHOUND_RACING = 4339
@@ -147,7 +140,7 @@ def list_market_book(market_id):
                 sp_available=False,
                 sp_traded=False,
                 ex_best_offers=True,
-                ex_all_offers=True,
+                ex_all_offers=False,
                 ex_traded=True,
             )
         ),
@@ -155,4 +148,4 @@ def list_market_book(market_id):
         match_projection='ROLLED_UP_BY_PRICE',
         lightweight=True)
     print(f'res length {len(res)}')
-    print(json.dumps(res, indent=4, default=str, sort_keys=True))
+    print(json.dumps(res, indent=3))

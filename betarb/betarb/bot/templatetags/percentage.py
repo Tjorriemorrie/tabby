@@ -37,11 +37,8 @@ def flot(val, dec=None):
 @register.filter(name='odds')
 def odds(val):
     if not val:
-        return 0
-    try:
-        val = float(val)
-    except Exception as e:
-        raise Exception(f'could not convert {val}')
+        return '-'
+    val = max(-2, min(1000, float(val)))
     if val < 4:
         dec = 2
     elif val < 20:

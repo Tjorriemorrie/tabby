@@ -2,7 +2,7 @@ import logging
 
 from django.db import models
 
-from betfair.models import Event
+from betfair.models import Event, Market, RunnerBook
 from .managers import RaceManager, AccuracyManager, BucketManager, FixedOddManager
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,8 @@ class Race(models.Model):
     objects = RaceManager()
 
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE)
-    betfair_event = models.ForeignKey(Event, null=True, on_delete=models.SET_NULL)
+    # betfair
+    win_market = models.ForeignKey(Market, null=True, on_delete=models.SET_NULL)
 
     number = models.IntegerField()
 
@@ -55,7 +56,7 @@ class Race(models.Model):
     has_processed = models.BooleanField(default=False)
 
     def __str__(self):
-        return f'{self.meeting.name} {self.number}'
+        return f'<Race [{self.id}] {self.meeting.name} R{self.number} time={self.start_time}>'
 
     def display(self):
         return f'{self.meeting.name} {self.number}'
@@ -87,6 +88,36 @@ class Runner(models.Model):
         first_perc = 1 / first.win_dec
         last_perc = 1 / last.win_dec
         return (first_perc - last_perc) / last_perc
+
+    @property
+    def back(self):
+        """Current betfair best available back odds"""
+        market = self.race.win_market
+        if not market:
+            return -2
+        book = market.book_set.last()
+        rbook = RunnerBook.objects.get(
+            book=book,
+            runner__cloth_number=self.runner_number
+        )
+        if not rbook:
+            return -1
+        return rbook.lay_price
+
+    @property
+    def lay(self):
+        """Current betfair best available back odds"""
+        market = self.race.win_market
+        if not market:
+            return -2
+        book = market.book_set.last()
+        rbook = RunnerBook.objects.get(
+            book=book,
+            runner__cloth_number=self.runner_number
+        )
+        if not rbook:
+            return -1
+        return rbook.back_price
 
 
 class FixedOdd(models.Model):

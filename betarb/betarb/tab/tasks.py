@@ -1,8 +1,9 @@
+from betfair.tasks import monitor_market_book
 import datetime
 import logging
+import re
 
 import pandas as pd
-import re
 import requests
 from celery import shared_task
 from django.core.cache import cache
@@ -11,7 +12,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from sklearn.linear_model import LinearRegression
 
-from betfair.models import Event
+from betfair.models import Market
 from .models import Meeting, Race, Result, Accuracy, Bucket
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ def upsert_race(item):
                 'name': item['raceName'],
                 'start_time': item['raceStartTime'],
                 'link_self': item['_links']['self'],
-                'link_form': item['_links']['form'],
+                'link_form': item['_links'].get('form'),
                 'link_big_bets': item['_links']['bigBets'],
             }
         )
@@ -83,31 +84,11 @@ def upsert_meeting(item):
 
 
 @shared_task
-def link_races(pk):
-    race = Race.objects.get(id=pk)
-    try:
-        start_time_gap = race.start_time - datetime.timedelta(hours=2)
-        event = Event.objects.get(
-            venue=race.meeting.name,
-            race_number=race.number,
-            start_time__gt=start_time_gap,
-        )
-    except Event.DoesNotExist:
-        logger.error(f'Betfair event not found for tab {race}')
-        return
-    race.betfair_event = event
-    race.save()
-    logger.warning(f'Successfully linked {event} to {race} for {race.start_time.date()}')
-
-
-@shared_task
 def monitor_race(pk):
     """Monitor the race"""
     logger.info(f'Monitoring race id {pk}')
     race = Race.objects.get(id=pk)
     logger.info(f'self url = {race.link_self}')
-    if not race.betfair_event:
-        link_races.delay(race.pk)
     res = requests.get(race.link_self)
     res.raise_for_status()
     res = res.json()
@@ -119,7 +100,7 @@ def monitor_race(pk):
     race.has_parimutuel = res['hasParimutuel']
     race.class_conditions = res['raceClassConditions']
     race.status = res['raceStatus']
-    race.number_of_places = res['numberOfPlaces']
+    race.number_of_places = res.get('numberOfPlaces')
     race.save()
     logger.info(f'Updated race {race}')
 
@@ -182,14 +163,15 @@ def monitor_race(pk):
     # race has not started yet
     elif race.start_time > timezone.now():
         delta = race.start_time - timezone.now()
-        if delta.seconds > 60 * 14:
-            logger.warning(f'{race.meeting.name} {race.number}: is more than 15 minutes away, waiting till then')
-            countdown = delta.seconds - (60 * 14)
+        if delta.seconds > 60 * 9:
+            logger.warning(f'{race.meeting.name} {race.number}: is more than few minutes away, waiting till then')
+            countdown = delta.seconds - (60 * 9)
         else:
             countdown = delta.seconds % 60
             countdown += 60 if countdown < 30 and delta.seconds > 120 else 0
         logger.warning(f'{race.meeting.name} {race.number}: waiting {countdown} till next odds scrape')
         monitor_race.apply_async((pk,), countdown=countdown)
+        monitor_market_book.delay(pk)
 
     # race started but no results
     else:
@@ -298,7 +280,7 @@ def analyze():
     return len(races)
 
 
-@shared_task
+@shared_task(name='bucket')
 def bucket():
     """buckets the abs errors for betting range values"""
     df = pd.DataFrame.from_records(Accuracy.objects.all().values())
@@ -330,7 +312,7 @@ def bucket():
             )
 
             # check flag
-            if bucket.count <= 20:
+            if bucket.count <= 11:
                 flag_exit = True
 
         if flag_exit:

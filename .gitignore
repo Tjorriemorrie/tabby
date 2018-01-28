@@ -104,6 +104,6 @@ ENV/
 
 *.db
 
-**/secrets.py
+**/betfair/secrets.py
 
 **/.DS_Store

@@ -5,11 +5,15 @@
     margin: 0;
 }
 
+table td {
+    padding: 0.2em 0.4em;
+}
+
 .container {
     height: 100vh;
     width: 100vw;
     display: grid;
-    grid-template-columns: 4fr 3fr 2fr;
+    grid-template-columns: 6fr 5fr 4fr;
 }
 
 #sidebar {
@@ -45,4 +49,8 @@
 
 .pink {
     background: rgb(246, 148, 170);
+}
+
+.green {
+    background: rgb(56, 144, 99);
 }

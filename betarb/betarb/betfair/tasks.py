@@ -1,16 +1,14 @@
 import datetime
 import logging
-import re
-from operator import itemgetter
 
-import pytz
-from betfairlightweight.filters import market_filter, time_range
+from betfairlightweight.filters import market_filter, time_range, price_projection, price_data
 from celery import shared_task
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from tab.models import Race
 from .client import get_betfair_client, ET_HORSE_RACING, ET_GREYHOUND_RACING
-from .models import Event, Market, Book, Runner
+from .models import Event, Market, Book, Runner, RunnerBook
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +38,9 @@ def list_market_catalogue():
         lightweight=True)
 
     for cat in res:
+        if 'venue' not in cat['event']:
+            logger.error(f'No event venue in {cat}')
+            continue
         try:
             event = parse_event(cat['event'])
             market = parse_market(event, cat)
@@ -55,9 +56,9 @@ def parse_event(event):
     """Parses event from Event object"""
     event, created = Event.objects.update_or_create(
         event_id=event['id'],
-        venue=event['venue'].upper(),
-        open_date=parse_datetime(event['openDate']),
         defaults={
+            'open_date': parse_datetime(event['openDate']),
+            'venue': event['venue'].upper(),
             'name': event['name'],
             'country_code': event['countryCode'],
             'timezone': event['timezone'],
@@ -65,6 +66,8 @@ def parse_event(event):
     )
     if created:
         logger.warning(f'Created {event}')
+    else:
+        logger.warning(f'Updated {event}')
     return event
 
 
@@ -72,9 +75,9 @@ def parse_event(event):
 def parse_market(event, cat):
     """Parses market from MarketCatalogue object"""
     market, created = Market.objects.update_or_create(
-        event=event,
         market_id=cat['marketId'],
         defaults={
+            'event': event,
             # catalogue
             'name': cat['marketName'],
             'total_matched': cat['totalMatched'],
@@ -90,6 +93,8 @@ def parse_market(event, cat):
     )
     if created:
         logger.warning(f'Created {market}')
+    else:
+        logger.warning(f'Updated {market}')
     return market
 
 
@@ -99,9 +104,9 @@ def parse_runners(market, items):
     runners = []
     for runner_item in items:
         runner, created = Runner.objects.update_or_create(
-            market=market,
             selection_id=runner_item['selectionId'],
             defaults={
+                'market': market,
                 # default
                 'name': runner_item['runnerName'].upper(),
                 'sort_priority': runner_item['sortPriority'],
@@ -113,124 +118,424 @@ def parse_runners(market, items):
             }
         )
         if created:
-            logger.info(f'Created {runner}')
+            logger.warning(f'Created {runner}')
         runners.append(runner)
     return runners
 
 
-'''
-{
-        "description": {
-            "bettingType": "ODDS",
-            "bspMarket": false,
-            "clarifications": "NR: (EST) <br> 2. Blameitonthewhisky (8.8%,18:39)",
-            "discountAllowed": true,
-            "marketBaseRate": 5.0,
-            "marketTime": "2018-01-28T00:50:00.000Z",
-            "marketType": "OTHER_PLACE",
-            "persistenceEnabled": false,
-            "priceLadderDescription": {
-                "type": "CLASSIC"
-            },
-            "raceType": "Harness",
-            "regulator": "MALTA LOTTERIES AND GAMBLING AUTHORITY",
-            "rules": "<table cellborder=\"0\" width=\"100%\"></table><a href=\"http://form.horseracing.betfair.com\" target=\"_blank\"><img src=\" http://content-cache.betfair.com/images/en_GB/mr_fr.gif\" title=\u201dForm/ Results\u201d border=\"0\"></a><br><br><b>MARKET INFORMATION</b><br><br>For further information please see <a href=http://content.betfair.com/aboutus/content.asp?sWhichKey=Rules%20and%20Regulations#undefined.do style=color:0163ad; text-decoration: underline; target=_blank>Rules & Regs</a>.<br><br>Who will finish 1st or 2nd in this race? NON RUNNERS DO NOT CHANGE THE PLACE TERMS. Should the number of runners be equal to or less than the number of places available as set out above in these rules all bets will be void. This market will be settled on the official result - horses running for purse only will be scratched. CARD NUMBERS ARE A GUIDE ONLY. BETS ARE PLACED ON A NAMED HORSE. Horses are NOT COUPLED. Betfair Non-Runner Rule applies. Dead heat rules apply.<br><br><b>This market will be CLOSED at the off </b>with unmatched bets cancelled once the Betfair SP reconciliation process has been completed (if applicable). ",
-            "rulesHasDate": true,
-            "suspendTime": "2018-01-28T00:50:00.000Z",
-            "turnInPlayEnabled": false,
-            "wallet": "UK wallet"
-        },
-        "event": {
-            "countryCode": "US",
-            "id": "28563665",
-            "name": "Woodb (Harness) (US) 27th Jan",
-            "openDate": "2018-01-28T00:10:00.000Z",
-            "timezone": "US/Eastern",
-            "venue": "Woodbine"
-        },
-        "marketId": "1.139419620",
-        "marketName": "2 TBP",
-        "marketStartTime": "2018-01-28T00:50:00.000Z",
-        "totalMatched": 6.9832
-        "runners": [
-            {
-                "handicap": 0.0,
-                "metadata": {
-                    "ADJUSTED_RATING": null,
-                    "AGE": "5",
-                    "BRED": "USA",
-                    "CLOTH_NUMBER": "1",
-                    "CLOTH_NUMBER_ALPHA": "1",
-                    "COLOURS_DESCRIPTION": "white-blue-oran",
-                    "COLOURS_FILENAME": null,
-                    "COLOUR_TYPE": "b",
-                    "DAMSIRE_BRED": "USA",
-                    "DAMSIRE_NAME": "Angus Hall",
-                    "DAMSIRE_YEAR_BORN": null,
-                    "DAM_BRED": "USA",
-                    "DAM_NAME": "J M Aggie",
-                    "DAM_YEAR_BORN": null,
-                    "DAYS_SINCE_LAST_RUN": "7",
-                    "FORECASTPRICE_DENOMINATOR": "1",
-                    "FORECASTPRICE_NUMERATOR": "12",
-                    "FORM": "288329",
-                    "JOCKEY_CLAIM": null,
-                    "JOCKEY_NAME": "Hudon, Phillip",
-                    "OFFICIAL_RATING": null,
-                    "OWNER_NAME": "Peter Core-Raymond Core,Sarnia,ON",
-                    "SEX_TYPE": "m",
-                    "SIRE_BRED": "USA",
-                    "SIRE_NAME": "Deweycheatumnhowe",
-                    "SIRE_YEAR_BORN": null,
-                    "STALL_DRAW": "1",
-                    "TRAINER_NAME": "Coulter, Steve P",
-                    "WEARING": null,
-                    "WEIGHT_UNITS": "pounds",
-                    "WEIGHT_VALUE": "180",
-                    "runnerId": "11536121"
-                },
-                "runnerName": "Tymal Diamond",
-                "selectionId": 11536121,
-                "sortPriority": 1
-            },
-        ],
-    },
-'''
+@shared_task
+def monitor_market_book(race_pk):
+    """monitor the market book of the given race"""
+    race = Race.objects.get(id=race_pk)
+    if not race.win_market:
+        link_betfair_market.delay(race.pk)
+    else:
+        monitor_market(race.win_market.pk)
 
 
+@shared_task
+def link_betfair_market(pk):
+    race = Race.objects.get(id=pk)
+    try:
+        market = Market.objects.get(
+            market_type='WIN',
+            event__venue=race.meeting.name,
+            start_time=race.start_time,
+        )
+    except Market.DoesNotExist:
+        logger.error(f'Betfair event not found for tab {race}')
+        return
+    race.win_market = market
+    race.save()
+    logger.warning(f'Linked {market} to {race}!')
+
+
+@shared_task
 def monitor_market(pk):
     """monitor market"""
     market = Market.objects.get(id=pk)
     trading = get_betfair_client()
     res = trading.betting.list_market_book(
         market_ids=[market.market_id],
-        match_projection='ROLLED_UP_BY_PRICE'
-    )
+        price_projection=price_projection(
+            price_data(
+                sp_available=False,
+                sp_traded=False,
+                ex_best_offers=True,
+                ex_all_offers=True,
+                ex_traded=True,
+            )
+        ),
+        order_projection='ALL',
+        match_projection='ROLLED_UP_BY_PRICE',
+        lightweight=True)
+
     if len(res) != 1:
-        raise Exception(f'Expected 1 marketbook but received {len(res)} for {market.market_id}')
+        raise Exception(f'MarketBook not found for {market}')
     item = res[0]
 
+    book = upsert_market_book(market, item)
+    rbooks = upsert_runner_book(book, item)
+    if book.number_of_active_runners != len(rbooks):
+        logger.error(f'Missing runners {book.number_of_active_runners} vs {len(rbooks)} in {book}')
+        logger.error(f'Market has {market.runner_set.count()} runners (expecting {book.number_of_runners} from book)')
+    else:
+        logger.warning(f'Successfully monitored market {market}')
+
+
+@shared_task
+def upsert_market_book(market, res):
     # create book for version
     book, created = Book.objects.update_or_create(
         market=market,
-        version=item.version,
+        last_match_time=res.get('lastMatchTime'),
         defaults={
-            'bet_delay': item.bet_delay,
-            'bsp_reconciled': item.bsp_reconciled,
-            'complete': item.complete,
-            'cross_matching': item.cross_matching,
-            'inplay': item.inplay,
-            'is_market_data_delayed': item.is_market_data_delayed,
-            'last_match_time': item.last_match_time,
-            'number_of_active_runners': item.number_of_active_runners,
-            'number_of_runners': item.number_of_runners,
-            'number_of_winners': item.number_of_winners,
-            'runners_voidable': item.runners_voidable,
-            'status': item.status,
-            'total_available': item.total_available,
-            'total_matched': item.total_matched,
+            'is_market_data_delayed': res['isMarketDataDelayed'],
+            'status': res['status'],
+            'bet_delay': res['betDelay'],
+            'bsp_reconciled': res['bspReconciled'],
+            'complete': res['complete'],
+            'inplay': res['inplay'],
+            'number_of_winners': res['numberOfWinners'],
+            'number_of_runners': res['numberOfRunners'],
+            'number_of_active_runners': res['numberOfActiveRunners'],
+            'total_matched': res.get('totalMatched'),
+            'total_available': res['totalAvailable'],
+            'cross_matching': res['crossMatching'],
+            'runners_voidable': res['runnersVoidable'],
+            'version': res['version'],
         }
     )
+    if created:
+        logger.info(f'Created {book}')
+    return book
 
-    # create runners
 
+@shared_task
+def upsert_runner_book(book, res):
+    # create book for every runner
+    rbooks = []
+    for item in res['runners']:
+        try:
+            runner = Runner.objects.get(selection_id=item['selectionId'])
+        except Runner.DoesNotExist:
+            logger.error(f'Could not find runner for {item["selectionId"]}')
+            continue
+
+        best_back = item['ex']['availableToBack'][0] if item['ex']['availableToBack'] else {}
+        best_lay = item['ex']['availableToLay'][0] if item['ex']['availableToLay'] else {}
+        rbook, created = RunnerBook.objects.update_or_create(
+            book=book,
+            runner=runner,
+            defaults={
+                'status': item['status'],
+                'adjustment_factor': item.get('adjustmentFactor'),
+                'last_price_traded': item.get('lastPriceTraded'),
+                'total_matched': item.get('totalMatched'),
+                'back_price': best_back.get('price'),
+                'back_size': best_back.get('size'),
+                'lay_price': best_lay.get('price'),
+                'lay_size': best_lay.get('size'),
+            }
+        )
+        if created:
+            logger.info(f'Created {rbook}')
+        rbooks.append(rbook)
+    return rbooks
+
+
+'''
+>>> list_market_book(1.139428965)
+res length 1
+[
+   {
+      "marketId": "1.139428965",
+      "isMarketDataDelayed": true,
+      "status": "OPEN",
+      "betDelay": 0,
+      "bspReconciled": false,
+      "complete": true,
+      "inplay": false,
+      "numberOfWinners": 1,
+      "numberOfRunners": 7,
+      "numberOfActiveRunners": 7,
+      "lastMatchTime": "2018-01-28T04:33:22.412Z",
+      "totalMatched": 501.95,
+      "totalAvailable": 107933.31,
+      "crossMatching": false,
+      "runnersVoidable": false,
+      "version": 2030577311,
+      "runners": [
+         {
+            "selectionId": 11163108,
+            "handicap": 0.0,
+            "status": "ACTIVE",
+            "adjustmentFactor": 8.199,
+            "lastPriceTraded": 6.6,
+            "totalMatched": 0.0,
+            "ex": {
+               "availableToBack": [
+                  {
+                     "price": 9.2,
+                     "size": 26.16
+                  },
+                  {
+                     "price": 8.4,
+                     "size": 23.44
+                  },
+                  {
+                     "price": 6.6,
+                     "size": 47.14
+                  }
+               ],
+               "availableToLay": [
+                  {
+                     "price": 17.0,
+                     "size": 33.64
+                  },
+                  {
+                     "price": 22.0,
+                     "size": 19.2
+                  },
+                  {
+                     "price": 27.0,
+                     "size": 22.7
+                  }
+               ],
+               "tradedVolume": []
+            }
+         },
+         {
+            "selectionId": 11376314,
+            "handicap": 0.0,
+            "status": "ACTIVE",
+            "adjustmentFactor": 33.563,
+            "lastPriceTraded": 2.06,
+            "totalMatched": 0.0,
+            "ex": {
+               "availableToBack": [
+                  {
+                     "price": 2.08,
+                     "size": 135.92
+                  },
+                  {
+                     "price": 2.04,
+                     "size": 19.48
+                  },
+                  {
+                     "price": 1.57,
+                     "size": 17.46
+                  }
+               ],
+               "availableToLay": [
+                  {
+                     "price": 2.6,
+                     "size": 20.0
+                  },
+                  {
+                     "price": 3.3,
+                     "size": 64.5
+                  },
+                  {
+                     "price": 3.7,
+                     "size": 59.36
+                  }
+               ],
+               "tradedVolume": []
+            }
+         },
+         {
+            "selectionId": 1506801,
+            "handicap": 0.0,
+            "status": "ACTIVE",
+            "adjustmentFactor": 26.095,
+            "lastPriceTraded": 4.2,
+            "totalMatched": 0.0,
+            "ex": {
+               "availableToBack": [
+                  {
+                     "price": 4.2,
+                     "size": 53.81
+                  },
+                  {
+                     "price": 3.15,
+                     "size": 90.48
+                  },
+                  {
+                     "price": 3.0,
+                     "size": 43.65
+                  }
+               ],
+               "availableToLay": [
+                  {
+                     "price": 8.4,
+                     "size": 44.74
+                  },
+                  {
+                     "price": 9.0,
+                     "size": 28.56
+                  },
+                  {
+                     "price": 9.4,
+                     "size": 27.93
+                  }
+               ],
+               "tradedVolume": []
+            }
+         },
+         {
+            "selectionId": 11499030,
+            "handicap": 0.0,
+            "status": "ACTIVE",
+            "adjustmentFactor": 9.562,
+            "totalMatched": 0.0,
+            "ex": {
+               "availableToBack": [
+                  {
+                     "price": 10.0,
+                     "size": 69.95
+                  },
+                  {
+                     "price": 9.6,
+                     "size": 64.59
+                  },
+                  {
+                     "price": 8.8,
+                     "size": 75.07
+                  }
+               ],
+               "availableToLay": [
+                  {
+                     "price": 220.0,
+                     "size": 18.21
+                  },
+                  {
+                     "price": 990.0,
+                     "size": 23.17
+                  }
+               ],
+               "tradedVolume": []
+            }
+         },
+         {
+            "selectionId": 16932054,
+            "handicap": 0.0,
+            "status": "ACTIVE",
+            "adjustmentFactor": 11.344,
+            "lastPriceTraded": 20.0,
+            "totalMatched": 0.0,
+            "ex": {
+               "availableToBack": [
+                  {
+                     "price": 13.5,
+                     "size": 35.61
+                  },
+                  {
+                     "price": 11.5,
+                     "size": 68.09
+                  },
+                  {
+                     "price": 2.64,
+                     "size": 100.59
+                  }
+               ],
+               "availableToLay": [
+                  {
+                     "price": 21.0,
+                     "size": 19.07
+                  },
+                  {
+                     "price": 110.0,
+                     "size": 24.18
+                  },
+                  {
+                     "price": 120.0,
+                     "size": 20.0
+                  }
+               ],
+               "tradedVolume": []
+            }
+         },
+         {
+            "selectionId": 13034617,
+            "handicap": 0.0,
+            "status": "ACTIVE",
+            "adjustmentFactor": 6.265,
+            "lastPriceTraded": 8.4,
+            "totalMatched": 0.0,
+            "ex": {
+               "availableToBack": [
+                  {
+                     "price": 7.4,
+                     "size": 136.26
+                  },
+                  {
+                     "price": 7.0,
+                     "size": 101.26
+                  },
+                  {
+                     "price": 6.2,
+                     "size": 114.77
+                  }
+               ],
+               "availableToLay": [
+                  {
+                     "price": 15.0,
+                     "size": 44.55
+                  },
+                  {
+                     "price": 28.0,
+                     "size": 45.88
+                  },
+                  {
+                     "price": 30.0,
+                     "size": 36.66
+                  }
+               ],
+               "tradedVolume": []
+            }
+         },
+         {
+            "selectionId": 11409455,
+            "handicap": 0.0,
+            "status": "ACTIVE",
+            "adjustmentFactor": 4.973,
+            "lastPriceTraded": 14.0,
+            "totalMatched": 0.0,
+            "ex": {
+               "availableToBack": [
+                  {
+                     "price": 14.0,
+                     "size": 53.67
+                  },
+                  {
+                     "price": 4.5,
+                     "size": 22.33
+                  },
+                  {
+                     "price": 2.16,
+                     "size": 57.7
+                  }
+               ],
+               "availableToLay": [
+                  {
+                     "price": 24.0,
+                     "size": 20.97
+                  },
+                  {
+                     "price": 110.0,
+                     "size": 17.6
+                  },
+                  {
+                     "price": 980.0,
+                     "size": 6.95
+                  }
+               ],
+               "tradedVolume": []
+            }
+         }
+      ]
+   }
+]
+>>>
+'''
