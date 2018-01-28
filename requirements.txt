@@ -19,3 +19,4 @@ celery[redis]
 django-celery-results
 django-celery-beat
 asgi-redis
+betfairlightweight

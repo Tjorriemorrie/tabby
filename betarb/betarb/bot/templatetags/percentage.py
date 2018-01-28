@@ -17,3 +17,43 @@ def percentage(val, dec=None):
     if dec == 0:
         val = int(val)
     return f'{val}%'
+
+
+@register.filter(name='float')
+def flot(val, dec=None):
+    if dec is None:
+        if val < 1:
+            dec = 2
+        elif val < 10:
+            dec = 1
+        else:
+            dec = 0
+    val = round(val, dec)
+    if dec == 0:
+        val = int(val)
+    return f'{val}'
+
+
+@register.filter(name='odds')
+def odds(val):
+    if not val:
+        return 0
+    try:
+        val = float(val)
+    except Exception as e:
+        raise Exception(f'could not convert {val}')
+    if val < 4:
+        dec = 2
+    elif val < 20:
+        dec = 1
+    else:
+        dec = 0
+    val = round(val, dec)
+    if dec == 0:
+        val = int(val)
+    return f'{val}'
+
+
+@register.filter(name='as_odds')
+def as_odds(val):
+    return 1000 if not val else 1 / val

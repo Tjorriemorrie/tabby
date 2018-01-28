@@ -104,7 +104,6 @@ ENV/
 
 *.db
 
-*.csr
-*.crt
-*.key
-**/betfair/api.py
+**/secrets.py
+
+**/.DS_Store

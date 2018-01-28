@@ -17,16 +17,31 @@
         </span>
     </div>
 
+    <div class="race_header">
+        <span>Betfair</span>
+        {% if not race.betfair_event %}
+            <span>&mdash;</span>
+            <span>&mdash;</span>
+        {% else %}
+            <span>ID: {{ race.betfair_event.event_id }}</span>
+            <span>{{ race.betfair_event.market_set.all|length }} markets</span>
+            <span>{% for market in race.betfair_event.market_set.all %}
+                [{{ market.type }} {{ market.market_id }}]
+            {% endfor %}</span>
+        {% endif %}
+    </div>
+
     <div class="race_body">
         <table cellpadding="1" border="1">
             <thead>
             <tr>
                 <td>Number</td>
                 <td>Name</td>
-                <td>Est %</td>
-                <td>Given %</td>
-                <td>Change</td>
+                <td class="blue">Back</td>
+                <td>Est</td>
+                <td class="pink">Lay</td>
                 <td colspan="5">Win odds</td>
+                <td>Change</td>
             </tr>
             </thead>
             <tbody>
@@ -39,14 +54,15 @@
                         {{ r.name }}
                     {% endif %}</td>
                     {% if r.fixed_betting_status != 'Open' %}
-                        <td colspan="8"></td>
+                        <td colspan="9"></td>
                     {% else %}
-                        <td>{{ r.fo.first.win_est|percentage }}</td>
-                        <td>{{ r.fo.first.win_perc|percentage }}</td>
-                        <td>{{ r.odds_change|percentage:0 }}</td>
+                        <td class="blue">{{ r.fo.first.win_back|odds }}</td>
+                        <td>{{ r.fo.first.win_est|as_odds|odds }}</td>
+                        <td class="pink">{{ r.fo.first.win_lay|odds }}</td>
                         {% for fo in r.fo %}
                             <td>{{ fo.win_dec }}</td>
                         {% endfor %}
+                        <td>{{ r.odds_change|percentage:0 }}</td>
                     {% endif %}
                 </tr>
             {% endfor %}

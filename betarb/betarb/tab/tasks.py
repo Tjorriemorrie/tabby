@@ -1,15 +1,18 @@
-from sklearn.linear_model import LinearRegression
-import pandas as pd
-import logging
 import datetime
-from django.db import IntegrityError
+import logging
+
+import pandas as pd
+import re
 import requests
 from celery import shared_task
 from django.core.cache import cache
+from django.db import IntegrityError
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from sklearn.linear_model import LinearRegression
 
-from .models import Meeting, Race, Result, Runner, Accuracy, Bucket
+from betfair.models import Event
+from .models import Meeting, Race, Result, Accuracy, Bucket
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,7 @@ def scrape_races():
     for item in res['races']:
         race, created = upsert_race(item)
         if created:
-            logger.info('Created {}'.format(race))
+            logger.info(f'Created {race}')
         if not cache.get(race.pk):
             cache.set(race.pk, 1)
             monitor_race.delay(race.pk)
@@ -44,7 +47,7 @@ def upsert_race(item):
             number=item['raceNumber'],
             defaults={
                 'distance': item['raceDistance'],
-                'name': item['raceName'].title(),
+                'name': item['raceName'],
                 'start_time': item['raceStartTime'],
                 'link_self': item['_links']['self'],
                 'link_form': item['_links']['form'],
@@ -60,8 +63,10 @@ def upsert_race(item):
 def upsert_meeting(item):
     """Upsert a meeting into the db"""
     try:
+        meeting_name = item['meetingName'].upper()
+        meeting_name = re.sub('\s(PK)$', ' PARK', meeting_name)
         return Meeting.objects.update_or_create(
-            name=item['meetingName'].title(),
+            name=meeting_name.upper(),
             date=item['meetingDate'],
             defaults={
                 'location': item['location'],
@@ -78,11 +83,31 @@ def upsert_meeting(item):
 
 
 @shared_task
+def link_races(pk):
+    race = Race.objects.get(id=pk)
+    try:
+        start_time_gap = race.start_time - datetime.timedelta(hours=2)
+        event = Event.objects.get(
+            venue=race.meeting.name,
+            race_number=race.number,
+            start_time__gt=start_time_gap,
+        )
+    except Event.DoesNotExist:
+        logger.error(f'Betfair event not found for tab {race}')
+        return
+    race.betfair_event = event
+    race.save()
+    logger.warning(f'Successfully linked {event} to {race} for {race.start_time.date()}')
+
+
+@shared_task
 def monitor_race(pk):
     """Monitor the race"""
     logger.info(f'Monitoring race id {pk}')
     race = Race.objects.get(id=pk)
     logger.info(f'self url = {race.link_self}')
+    if not race.betfair_event:
+        link_races.delay(race.pk)
     res = requests.get(race.link_self)
     res.raise_for_status()
     res = res.json()
@@ -101,7 +126,7 @@ def monitor_race(pk):
     for runner_item in res['runners']:
         runner, create = race.runner_set.update_or_create(
             runner_number=runner_item['runnerNumber'],
-            name=runner_item['runnerName'],
+            name=runner_item['runnerName'].upper(),
             defaults={
                 'link_form': runner_item.get('_links', {}).get('form'),
                 'trainer_name': runner_item['trainerFullName'],
@@ -175,7 +200,6 @@ def monitor_race(pk):
 @shared_task
 def upsert_results(pk, res):
     race = Race.objects.get(id=pk)
-    logger.warning(f'{race.meeting.name} {race.number}: has results!')
 
     for i, result_items in enumerate(res['results']):
         pos = i + 1
@@ -189,6 +213,10 @@ def upsert_results(pk, res):
             if created:
                 logger.debug(f'Created result {result} pos {pos} with {runner} and {race}')
 
+    race.has_results = True
+    race.save()
+    logger.warning(f'{race.meeting.name} {race.number}: saved results')
+
 
 @shared_task
 def post_process():
@@ -201,8 +229,9 @@ def post_process():
 def race_cleanup():
     """Delete race if no results and url self gives 404"""
     yesterday = timezone.now() - datetime.timedelta(hours=24)
+    print(f'yesterday {yesterday}')
     races = Race.objects.filter(
-        has_results=False).filter(
+        has_results=False,
         start_time__lte=yesterday
     ).all()
     for race in races:
@@ -220,14 +249,12 @@ def race_cleanup():
         res = requests.get(race.link_self)
         if res.status_code == requests.codes.ok:
             upsert_results.delay(race.pk, res.json())
-            race.has_results = True
-            race.save()
             continue
 
         # then rather delete worthless race info
         r = race.delete()
         logger.warning(f'Deleted {race.pk}: {r}')
-    logger.warning(f'>>>> Race cleanup done')
+    logger.warning(f'>>>> Race cleanup done on {len(races)} races')
 
 
 @shared_task
@@ -267,7 +294,7 @@ def analyze():
         race.has_processed = True
         race.save()
         logger.warning(f'Created accuracy for {race.display()}')
-    logger.warning(f'>>>> Task accuracy finished')
+    logger.warning(f'>>>> Task accuracy finished {len(races)} races')
     return len(races)
 
 
@@ -303,7 +330,7 @@ def bucket():
             )
 
             # check flag
-            if bucket.count < 10:
+            if bucket.count <= 20:
                 flag_exit = True
 
         if flag_exit:

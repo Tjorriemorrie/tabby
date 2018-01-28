@@ -38,3 +38,11 @@
 .race_header .venue {
     font-weight: bold;
 }
+
+.blue {
+    background: rgb(117, 194, 253);
+}
+
+.pink {
+    background: rgb(246, 148, 170);
+}

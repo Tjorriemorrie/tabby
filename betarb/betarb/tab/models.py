@@ -1,8 +1,8 @@
-from django.db import models
-from django.db.models import Max
-
 import logging
 
+from django.db import models
+
+from betfair.models import Event
 from .managers import RaceManager, AccuracyManager, BucketManager, FixedOddManager
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,10 @@ class Meeting(models.Model):
 
 class Race(models.Model):
     objects = RaceManager()
+
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE)
+    betfair_event = models.ForeignKey(Event, null=True, on_delete=models.SET_NULL)
+
     number = models.IntegerField()
 
     link_self = models.CharField(max_length=255)
@@ -50,6 +53,9 @@ class Race(models.Model):
 
     has_results = models.BooleanField(default=False)
     has_processed = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f'{self.meeting.name} {self.number}'
 
     def display(self):
         return f'{self.meeting.name} {self.number}'
@@ -111,6 +117,24 @@ class FixedOdd(models.Model):
         bucket = self.bucket
         est = bucket.coef * self.win_perc + bucket.intercept
         return max(0, min(1, est))
+
+    @property
+    def win_back(self):
+        """Marked up with 30% to place a bet"""
+        win_est = self.win_est
+        if not win_est:
+            return 0
+        win_est *= 0.90
+        return 1 / win_est
+
+    @property
+    def win_lay(self):
+        """Marked up with 30% to place a bet"""
+        win_est = self.win_est
+        if not win_est:
+            return 0
+        win_est *= 1.10
+        return 1 / win_est
 
 
 class ParimutuelOdd(models.Model):
