@@ -54,3 +54,11 @@ table td {
 .green {
     background: rgb(56, 144, 99);
 }
+
+.gold {
+    background: palegoldenrod;
+}
+
+.bold {
+    font-weight: bold;
+}

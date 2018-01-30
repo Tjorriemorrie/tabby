@@ -1,3 +1,4 @@
+from django.utils import timezone
 from django import template
 
 register = template.Library()
@@ -54,3 +55,11 @@ def odds(val):
 @register.filter(name='as_odds')
 def as_odds(val):
     return 1000 if not val else 1 / val
+
+
+@register.filter(name='secs')
+def secs(val):
+    if not val:
+        return
+    delta = timezone.now() - val
+    return delta.seconds

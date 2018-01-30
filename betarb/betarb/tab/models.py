@@ -2,7 +2,7 @@ import logging
 
 from django.db import models
 
-from betfair.models import Event, Market, RunnerBook
+from betfair.models import Market, RunnerBook
 from .managers import RaceManager, AccuracyManager, BucketManager, FixedOddManager
 
 logger = logging.getLogger(__name__)
@@ -33,8 +33,6 @@ class Race(models.Model):
     objects = RaceManager()
 
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE)
-    # betfair
-    win_market = models.ForeignKey(Market, null=True, on_delete=models.SET_NULL)
 
     number = models.IntegerField()
 
@@ -58,8 +56,11 @@ class Race(models.Model):
     def __str__(self):
         return f'<Race [{self.id}] {self.meeting.name} R{self.number} time={self.start_time}>'
 
-    def display(self):
-        return f'{self.meeting.name} {self.number}'
+    @property
+    def win_market(self):
+        return self.market_set.filter(
+            market_type='WIN'
+        ).get()
 
 
 class Runner(models.Model):
@@ -92,7 +93,7 @@ class Runner(models.Model):
     @property
     def back(self):
         """Current betfair best available back odds"""
-        market = self.race.win_market
+        market = self.race.market_set.first()
         if not market:
             return -2
         book = market.book_set.last()
@@ -107,7 +108,7 @@ class Runner(models.Model):
     @property
     def lay(self):
         """Current betfair best available back odds"""
-        market = self.race.win_market
+        market = self.race.market_set.first()
         if not market:
             return -2
         book = market.book_set.last()
@@ -118,6 +119,21 @@ class Runner(models.Model):
         if not rbook:
             return -1
         return rbook.back_price
+
+    @property
+    def trade(self):
+        """Current betfair best available back odds"""
+        market = self.race.market_set.first()
+        if not market:
+            return -2
+        book = market.book_set.last()
+        rbook = RunnerBook.objects.get(
+            book=book,
+            runner__cloth_number=self.runner_number
+        )
+        if not rbook:
+            return -1
+        return rbook.last_price_traded
 
 
 class FixedOdd(models.Model):

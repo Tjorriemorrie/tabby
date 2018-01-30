@@ -26,8 +26,8 @@
         {% else %}
             <span>event: {{ race.win_market.event.event_id }}</span>
             <span>market: {{ race.win_market.market_id }}</span>
-            <span>matched: {{ race.win_market.book_set.last.total_matched|floatformat:0 }}</span>
-            <span>{{ race.win_market.book_set.last.last_match_time|time:'H:i:s' }}</span>
+            <span>book: {{ race.win_market.book_set.last.id }}</span>
+            <span>{{ race.win_market.book_set.last.last_match_time|secs }}</span>
         {% endif %}
     </div>
 
@@ -37,10 +37,11 @@
             <tr>
                 <td>Number</td>
                 <td>Name</td>
-                <td class="blue">Back</td>
                 <td class="green">Tab</td>
-                <td>Est</td>
-                <td class="pink">Lay</td>
+                <td class="pink">Highest Lay</td>
+                <td class=""> {{ race.win_market.book_set.last.total_matched|floatformat:0 }}</td>
+                <td class="blue">Lowest Back</td>
+                <td class="gold">Est</td>
             </tr>
             </thead>
             <tbody>
@@ -53,12 +54,13 @@
                         {{ r.name }}
                     {% endif %}</td>
                     {% if r.fixed_betting_status != 'Open' %}
-                        <td colspan="4"></td>
+                        <td colspan="5"></td>
                     {% else %}
-                        <td class="blue">{{ r.lay|odds }}</td>
                         <td class="green">{{ r.fo.first.win_dec|odds }}</td>
-                        <td>{{ r.fo.first.win_est|as_odds|odds }}</td>
-                        <td class="pink">{{ r.back|odds }}</td>
+                        <td class="pink">{{ r.lay|odds }}</td>
+                        <td class="">{{ r.trade|odds }}</td>
+                        <td class="blue">{{ r.back|odds }}</td>
+                        <td class="gold">{{ r.fo.first.win_est|as_odds|odds }}</td>
                     {% endif %}
                 </tr>
             {% endfor %}

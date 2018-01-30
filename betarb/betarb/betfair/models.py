@@ -1,5 +1,7 @@
 from django.db import models
 
+from .managers import BucketManager
+
 
 class Event(models.Model):
     event_id = models.BigIntegerField(unique=True)
@@ -18,6 +20,9 @@ class Event(models.Model):
 class Market(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE)
 
+    # TAB
+    race = models.ForeignKey('tab.Race', null=True, on_delete=models.SET_NULL)
+
     # from catalogue
     market_id = models.CharField(max_length=100, unique=True)
     name = models.CharField(max_length=50)
@@ -32,12 +37,14 @@ class Market(models.Model):
     turn_in_play_enabled = models.BooleanField()
     race_type = models.CharField(max_length=50, null=True)
 
+    has_processed = models.BooleanField(default=False)
+
     def __str__(self):
         return f'<Market [{self.market_id}] {self.event.venue} start={self.start_time}>'
 
 
 class Runner(models.Model):
-    market = models.ForeignKey(Market, on_delete=models.CASCADE)
+    market = models.ForeignKey(Market, on_delete=models.DO_NOTHING)
 
     # default
     selection_id = models.BigIntegerField(unique=True)
@@ -72,8 +79,8 @@ class Book(models.Model):
     runners_voidable = models.BooleanField()
     version = models.BigIntegerField()
 
-    class Meta:
-        ordering = ['last_match_time']
+    # class Meta:
+    #     ordering = ['last_match_time']
 
     def __str__(self):
         return f'<Book [{self.version}] status={self.status}>'
@@ -93,4 +100,27 @@ class RunnerBook(models.Model):
     lay_size = models.FloatField(null=True)
 
     def __str__(self):
-        return f'<RB sel={self.runner.selection_id} matched={self.last_price_traded}>'
+        return f'<RB num={self.runner.cloth_number} sel={self.runner.selection_id} back={self.back_price} lay={self.lay_price}>'
+
+
+class Accuracy(models.Model):
+    market = models.ForeignKey(Market, on_delete=models.CASCADE)
+    runner_book = models.ForeignKey(RunnerBook, on_delete=models.CASCADE)
+
+    dec = models.FloatField(null=True)
+    perc = models.FloatField(null=True)
+    won = models.NullBooleanField()
+    error = models.FloatField(null=True)
+
+
+class Bucket(models.Model):
+    objects = BucketManager()
+
+    bins = models.IntegerField()
+    left = models.FloatField()
+    right = models.FloatField()
+    total = models.IntegerField()
+    count = models.IntegerField()
+    win_mean = models.FloatField()
+    coef = models.FloatField()
+    intercept = models.FloatField()

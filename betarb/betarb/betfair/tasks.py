@@ -1,19 +1,22 @@
 import datetime
 import logging
+import re
 
+import pandas as pd
 from betfairlightweight.filters import market_filter, time_range, price_projection, price_data
 from celery import shared_task
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from sklearn.linear_model import LinearRegression
 
 from tab.models import Race
 from .client import get_betfair_client, ET_HORSE_RACING, ET_GREYHOUND_RACING
-from .models import Event, Market, Book, Runner, RunnerBook
+from .models import Event, Market, Book, Runner, RunnerBook, Accuracy, Bucket
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task
+@shared_task(autoretry_for=(ValueError,), retry_backoff=True, retry_backoff_max=10, max_retries=20)
 def list_market_catalogue():
     trading = get_betfair_client()
     time_ago = timezone.now() - datetime.timedelta(minutes=10)
@@ -36,6 +39,8 @@ def list_market_catalogue():
         sort='FIRST_TO_START',
         max_results=1000,
         lightweight=True)
+    if not len(res):
+        raise ValueError('Expected results from betfair')
 
     for cat in res:
         if 'venue' not in cat['event']:
@@ -103,6 +108,13 @@ def parse_runners(market, items):
     """Parses runners from MarketCatalogue object"""
     runners = []
     for runner_item in items:
+        num = runner_item['metadata'].get('CLOTH_NUMBER')
+        if not num:
+            matches = re.match(r'^(\d+)', runner_item['runnerName'])
+            if matches:
+                num = matches.groups(0)[0]
+            else:
+                logger.error(f'Could not match number for {runner_item}')
         runner, created = Runner.objects.update_or_create(
             selection_id=runner_item['selectionId'],
             defaults={
@@ -112,13 +124,15 @@ def parse_runners(market, items):
                 'sort_priority': runner_item['sortPriority'],
                 'handicap': runner_item['handicap'],
                 # metadata
-                'cloth_number': runner_item['metadata'].get('CLOTH_NUMBER'),
+                'cloth_number': num,
                 'stall_draw': runner_item['metadata'].get('STALL_DRAW'),
                 'runner_id': runner_item['metadata']['runnerId'],
             }
         )
         if created:
             logger.warning(f'Created {runner}')
+        else:
+            logger.warning(f'Updated {runner}')
         runners.append(runner)
     return runners
 
@@ -126,16 +140,17 @@ def parse_runners(market, items):
 @shared_task
 def monitor_market_book(race_pk):
     """monitor the market book of the given race"""
-    race = Race.objects.get(id=race_pk)
-    if not race.win_market:
-        link_betfair_market.delay(race.pk)
+    try:
+        market = Market.objects.get(race_id=race_pk)
+    except Market.DoesNotExist:
+        link_betfair_market.delay(race_pk)
     else:
-        monitor_market(race.win_market.pk)
+        monitor_market(market.pk)
 
 
 @shared_task
-def link_betfair_market(pk):
-    race = Race.objects.get(id=pk)
+def link_betfair_market(race_pk):
+    race = Race.objects.get(id=race_pk)
     try:
         market = Market.objects.get(
             market_type='WIN',
@@ -143,11 +158,11 @@ def link_betfair_market(pk):
             start_time=race.start_time,
         )
     except Market.DoesNotExist:
-        logger.error(f'Betfair event not found for tab {race}')
+        logger.error(f'Betfair event not found for {race}')
         return
-    race.win_market = market
-    race.save()
-    logger.warning(f'Linked {market} to {race}!')
+    market.race = race
+    market.save()
+    logger.warning(f'Linked {market} onto {race}!')
 
 
 @shared_task
@@ -174,13 +189,17 @@ def monitor_market(pk):
         raise Exception(f'MarketBook not found for {market}')
     item = res[0]
 
+    # check that book is open and not inplay
+    if item['status'] != 'OPEN' or item['inplay']:
+        logger.error(f'Book for market is not open/inplay: {market}')
+        return
+
     book = upsert_market_book(market, item)
     rbooks = upsert_runner_book(book, item)
     if book.number_of_active_runners != len(rbooks):
         logger.error(f'Missing runners {book.number_of_active_runners} vs {len(rbooks)} in {book}')
         logger.error(f'Market has {market.runner_set.count()} runners (expecting {book.number_of_runners} from book)')
-    else:
-        logger.warning(f'Successfully monitored market {market}')
+    logger.warning(f'Finished monitored market {market}')
 
 
 @shared_task
@@ -208,6 +227,8 @@ def upsert_market_book(market, res):
     )
     if created:
         logger.info(f'Created {book}')
+    else:
+        logger.info(f'Updated {book}')
     return book
 
 
@@ -240,302 +261,141 @@ def upsert_runner_book(book, res):
         )
         if created:
             logger.info(f'Created {rbook}')
+        else:
+            logger.info(f'Updated {rbook}')
         rbooks.append(rbook)
     return rbooks
 
 
-'''
->>> list_market_book(1.139428965)
-res length 1
-[
-   {
-      "marketId": "1.139428965",
-      "isMarketDataDelayed": true,
-      "status": "OPEN",
-      "betDelay": 0,
-      "bspReconciled": false,
-      "complete": true,
-      "inplay": false,
-      "numberOfWinners": 1,
-      "numberOfRunners": 7,
-      "numberOfActiveRunners": 7,
-      "lastMatchTime": "2018-01-28T04:33:22.412Z",
-      "totalMatched": 501.95,
-      "totalAvailable": 107933.31,
-      "crossMatching": false,
-      "runnersVoidable": false,
-      "version": 2030577311,
-      "runners": [
-         {
-            "selectionId": 11163108,
-            "handicap": 0.0,
-            "status": "ACTIVE",
-            "adjustmentFactor": 8.199,
-            "lastPriceTraded": 6.6,
-            "totalMatched": 0.0,
-            "ex": {
-               "availableToBack": [
-                  {
-                     "price": 9.2,
-                     "size": 26.16
-                  },
-                  {
-                     "price": 8.4,
-                     "size": 23.44
-                  },
-                  {
-                     "price": 6.6,
-                     "size": 47.14
-                  }
-               ],
-               "availableToLay": [
-                  {
-                     "price": 17.0,
-                     "size": 33.64
-                  },
-                  {
-                     "price": 22.0,
-                     "size": 19.2
-                  },
-                  {
-                     "price": 27.0,
-                     "size": 22.7
-                  }
-               ],
-               "tradedVolume": []
-            }
-         },
-         {
-            "selectionId": 11376314,
-            "handicap": 0.0,
-            "status": "ACTIVE",
-            "adjustmentFactor": 33.563,
-            "lastPriceTraded": 2.06,
-            "totalMatched": 0.0,
-            "ex": {
-               "availableToBack": [
-                  {
-                     "price": 2.08,
-                     "size": 135.92
-                  },
-                  {
-                     "price": 2.04,
-                     "size": 19.48
-                  },
-                  {
-                     "price": 1.57,
-                     "size": 17.46
-                  }
-               ],
-               "availableToLay": [
-                  {
-                     "price": 2.6,
-                     "size": 20.0
-                  },
-                  {
-                     "price": 3.3,
-                     "size": 64.5
-                  },
-                  {
-                     "price": 3.7,
-                     "size": 59.36
-                  }
-               ],
-               "tradedVolume": []
-            }
-         },
-         {
-            "selectionId": 1506801,
-            "handicap": 0.0,
-            "status": "ACTIVE",
-            "adjustmentFactor": 26.095,
-            "lastPriceTraded": 4.2,
-            "totalMatched": 0.0,
-            "ex": {
-               "availableToBack": [
-                  {
-                     "price": 4.2,
-                     "size": 53.81
-                  },
-                  {
-                     "price": 3.15,
-                     "size": 90.48
-                  },
-                  {
-                     "price": 3.0,
-                     "size": 43.65
-                  }
-               ],
-               "availableToLay": [
-                  {
-                     "price": 8.4,
-                     "size": 44.74
-                  },
-                  {
-                     "price": 9.0,
-                     "size": 28.56
-                  },
-                  {
-                     "price": 9.4,
-                     "size": 27.93
-                  }
-               ],
-               "tradedVolume": []
-            }
-         },
-         {
-            "selectionId": 11499030,
-            "handicap": 0.0,
-            "status": "ACTIVE",
-            "adjustmentFactor": 9.562,
-            "totalMatched": 0.0,
-            "ex": {
-               "availableToBack": [
-                  {
-                     "price": 10.0,
-                     "size": 69.95
-                  },
-                  {
-                     "price": 9.6,
-                     "size": 64.59
-                  },
-                  {
-                     "price": 8.8,
-                     "size": 75.07
-                  }
-               ],
-               "availableToLay": [
-                  {
-                     "price": 220.0,
-                     "size": 18.21
-                  },
-                  {
-                     "price": 990.0,
-                     "size": 23.17
-                  }
-               ],
-               "tradedVolume": []
-            }
-         },
-         {
-            "selectionId": 16932054,
-            "handicap": 0.0,
-            "status": "ACTIVE",
-            "adjustmentFactor": 11.344,
-            "lastPriceTraded": 20.0,
-            "totalMatched": 0.0,
-            "ex": {
-               "availableToBack": [
-                  {
-                     "price": 13.5,
-                     "size": 35.61
-                  },
-                  {
-                     "price": 11.5,
-                     "size": 68.09
-                  },
-                  {
-                     "price": 2.64,
-                     "size": 100.59
-                  }
-               ],
-               "availableToLay": [
-                  {
-                     "price": 21.0,
-                     "size": 19.07
-                  },
-                  {
-                     "price": 110.0,
-                     "size": 24.18
-                  },
-                  {
-                     "price": 120.0,
-                     "size": 20.0
-                  }
-               ],
-               "tradedVolume": []
-            }
-         },
-         {
-            "selectionId": 13034617,
-            "handicap": 0.0,
-            "status": "ACTIVE",
-            "adjustmentFactor": 6.265,
-            "lastPriceTraded": 8.4,
-            "totalMatched": 0.0,
-            "ex": {
-               "availableToBack": [
-                  {
-                     "price": 7.4,
-                     "size": 136.26
-                  },
-                  {
-                     "price": 7.0,
-                     "size": 101.26
-                  },
-                  {
-                     "price": 6.2,
-                     "size": 114.77
-                  }
-               ],
-               "availableToLay": [
-                  {
-                     "price": 15.0,
-                     "size": 44.55
-                  },
-                  {
-                     "price": 28.0,
-                     "size": 45.88
-                  },
-                  {
-                     "price": 30.0,
-                     "size": 36.66
-                  }
-               ],
-               "tradedVolume": []
-            }
-         },
-         {
-            "selectionId": 11409455,
-            "handicap": 0.0,
-            "status": "ACTIVE",
-            "adjustmentFactor": 4.973,
-            "lastPriceTraded": 14.0,
-            "totalMatched": 0.0,
-            "ex": {
-               "availableToBack": [
-                  {
-                     "price": 14.0,
-                     "size": 53.67
-                  },
-                  {
-                     "price": 4.5,
-                     "size": 22.33
-                  },
-                  {
-                     "price": 2.16,
-                     "size": 57.7
-                  }
-               ],
-               "availableToLay": [
-                  {
-                     "price": 24.0,
-                     "size": 20.97
-                  },
-                  {
-                     "price": 110.0,
-                     "size": 17.6
-                  },
-                  {
-                     "price": 980.0,
-                     "size": 6.95
-                  }
-               ],
-               "tradedVolume": []
-            }
-         }
-      ]
-   }
-]
->>>
-'''
+########################################################################################################################
+# Post processing
+########################################################################################################################
+
+@shared_task
+def post_process():
+    cleanup()
+    if analyze():
+        create_buckets()
+
+
+@shared_task
+def cleanup():
+    """Delete from bottom up where there are no odds"""
+    # clear rbooks
+    res = RunnerBook.objects.filter(
+        status='ACTIVE',
+        back_price__isnull=True,
+        lay_price__isnull=True,
+    ).delete()
+    logger.warning(f'Deleted rbooks: {res}')
+
+    # clear books
+    res = Book.objects.exclude(
+        runnerbook__isnull=False
+    ).delete()
+    logger.warning(f'Deleted books: {res}')
+
+    # clear markets
+    yesterday = timezone.now() - datetime.timedelta(hours=24)
+    res = Market.objects.filter(
+        start_time__lt=yesterday,
+    ).exclude(
+        book__isnull=False,
+    ).delete()
+    logger.warning(f'Deleted markets: {res}')
+
+    # clear events
+    res = Event.objects.exclude(
+        market__isnull=False
+    ).delete()
+    logger.warning(f'Deleted events: {res}')
+
+    # clear runners (no cascade)
+    res = Runner.objects.exclude(
+        market__isnull=False
+    ).delete()
+    logger.warning(f'Deleted runners: {res}')
+
+    logger.warning(f'Betfair cleanup done')
+
+
+@shared_task
+def analyze():
+    """create analysis for results"""
+
+    # update markets
+    markets = Market.objects.filter(
+        race__has_results=True,
+        has_processed=False
+    )
+    print(markets.query)
+    markets = markets.all()
+
+    for market in markets:
+        Accuracy.objects.filter(market=market).delete()
+        for tab_runner in market.race.runner_set.all():
+            try:
+                rbook = RunnerBook.objects.filter(
+                    book=market.book_set.last(),
+                    runner__cloth_number=tab_runner.runner_number).get()
+            except RunnerBook.DoesNotExist:
+                logger.error(f'RunnerBook not found for {tab_runner}')
+                continue
+
+            if not rbook.last_price_traded:
+                logger.error(f'RunnerBook has no last price traded: {rbook}')
+                continue
+
+            result = tab_runner.result if hasattr(tab_runner, 'result') else None
+            accuracy = Accuracy(market=market, runner_book=rbook)
+            accuracy.dec = rbook.last_price_traded
+            accuracy.perc = 1 / accuracy.dec
+            accuracy.won = bool(result) and result.pos == 1
+            accuracy.error = accuracy.perc - accuracy.won
+            accuracy.save()
+
+        market.has_processed = True
+        market.save()
+        logger.warning(f'Created accuracy for {market}')
+    logger.warning(f'Accuracy finished for {len(markets)} markets')
+    return len(markets)
+
+
+@shared_task()
+def create_buckets():
+    """buckets the abs errors for betting range values"""
+    df = pd.DataFrame.from_records(Accuracy.objects.all().values())
+    # df['win_error_abs'] = df['win_error'].abs()
+    Bucket.objects.all().delete()
+    bins = 0
+    while True:
+        bins += 1
+        df['bins'] = 1
+        df['cats'] = pd.qcut(df['perc'], bins)
+        flag_exit = False
+        for name, grp in df.groupby('cats'):
+
+            # linear regression for coefficients
+            ols = LinearRegression().fit(
+                grp['perc'].values.reshape(-1, 1),
+                grp['won'].values.reshape(-1, 1))
+
+            # create bucket from bin group
+            bucket = Bucket.objects.create(
+                bins=bins,
+                left=name.left,
+                right=name.right,
+                total=len(grp),
+                count=grp['won'].sum(),
+                win_mean=grp['won'].mean(),
+                coef=ols.coef_[0],
+                intercept=ols.intercept_,
+            )
+
+            # check flag
+            if bucket.count <= 1:
+                flag_exit = True
+
+        if flag_exit:
+            break
+    logger.warning(f'Created max {bins} BetFair buckets')
