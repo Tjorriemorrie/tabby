@@ -2,6 +2,7 @@
 <div id="sidebar">
     <h2>Tab</h2>
     <p>Races: {{ tab_bucket_overall.count }}</p>
+    <p>Error: {{ tab_error|percentage }}</p>
     <p>{{ tab_buckets|length }} Buckets</p>
     <table border="1" cellspacing="1">
         <thead>
@@ -33,8 +34,24 @@
     <hr/>
     <br/>
 
+    <h3>Est acc: {{ est_acc|percentage }}</h3>
+    <h2>ROI: {{ roi|percentage }}</h2>
+    <h2>{{ outstanding|length }} bets outstanding</h2>
+    <p>Betting: {% if betting %}
+        <a href="/betting">on</a>
+    {% else %}
+        <a href="/betting">off</a>
+    {% endif %}</p>
+    <p>{{ backs_pp|floatformat:2 }} backs {{ backs_roi|percentage }} roi</p>
+    <p>{{ lays_pp|floatformat:2 }} lays {{ lays_roi|percentage }} roi</p>
+
+    <br/>
+    <hr/>
+    <br/>
+
     <h2>BetFair</h2>
     <p>Races: {{ bf_bucket_overall.count }}</p>
+    <p>Error: {{ bf_error|percentage }}</p>
     <p>{{ bf_buckets|length }} Buckets</p>
     <table border="1" cellspacing="1">
         <thead>

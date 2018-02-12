@@ -13,13 +13,22 @@ class RaceManager(models.Manager):
             has_fixed_odds=True
         ).order_by('start_time')[:limit]
 
-    def outgoing(self, limit=15):
+    def outgoing(self, limit=20):
         """Races that finished recently"""
         return super().get_queryset().prefetch_related('runner_set').filter(
             start_time__lte=timezone.now()
         ).filter(
             has_fixed_odds=True
         ).order_by('-start_time')[:limit]
+
+
+class RunnerManager(models.Manager):
+
+    def active(self):
+        """Get all active runners"""
+        return super().get_queryset().filter(
+            fixed_betting_status='Open'
+        ).all()
 
 
 class FixedOddManager(models.Manager):
@@ -33,7 +42,7 @@ class AccuracyManager(models.Manager):
 
     def avg_win_error(self):
         """Calculates single overall error average"""
-        return super().get_queryset().all().aggregate(Avg('win_error'))
+        return super().get_queryset().all().aggregate(Avg('win_error'))['win_error__avg']
 
 
 class BucketManager(models.Manager):

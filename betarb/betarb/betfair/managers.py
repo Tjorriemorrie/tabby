@@ -1,4 +1,4 @@
-from django.db.models import Manager, Max
+from django.db.models import Manager, Max, Avg, Sum, Count
 
 
 class BucketManager(Manager):
@@ -18,3 +18,29 @@ class BucketManager(Manager):
             left__lte=fo.win_perc,
             right__gt=fo.win_perc
         ).get()
+
+
+class AccuracyManager(Manager):
+
+    def avg_win_error(self):
+        """Calculates single overall error average"""
+        return super().get_queryset().all().aggregate(Avg('error'))['error__avg']
+
+
+class BetManager(Manager):
+
+    def roi(self):
+        """Calculates roi for all bets"""
+        return super().get_queryset().exclude(
+            outcome__isnull=True
+        ).all().aggregate(
+            roi=Sum('profit') / Sum('size_matched')
+        )['roi']
+
+    def outstanding(self):
+        """Calculates roi for all bets"""
+        return super().get_queryset().filter(
+            outcome__isnull=True,
+        ).exclude(
+            status='LAPSED'
+        ).all()

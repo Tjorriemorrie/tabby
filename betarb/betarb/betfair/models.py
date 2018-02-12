@@ -1,6 +1,6 @@
 from django.db import models
 
-from .managers import BucketManager
+from .managers import BucketManager, AccuracyManager, BetManager
 
 
 class Event(models.Model):
@@ -44,7 +44,7 @@ class Market(models.Model):
 
 
 class Runner(models.Model):
-    market = models.ForeignKey(Market, on_delete=models.DO_NOTHING)
+    market = models.ForeignKey(Market, null=True, on_delete=models.SET_NULL)
 
     # default
     selection_id = models.BigIntegerField(unique=True)
@@ -88,7 +88,7 @@ class Book(models.Model):
 
 class RunnerBook(models.Model):
     book = models.ForeignKey(Book, on_delete=models.CASCADE)
-    runner = models.ForeignKey(Runner, on_delete=models.DO_NOTHING)
+    runner = models.ForeignKey(Runner, on_delete=models.CASCADE)
 
     status = models.CharField(max_length=20)
     adjustment_factor = models.FloatField(null=True)
@@ -104,6 +104,7 @@ class RunnerBook(models.Model):
 
 
 class Accuracy(models.Model):
+    objects = AccuracyManager()
     market = models.ForeignKey(Market, on_delete=models.CASCADE)
     runner_book = models.ForeignKey(RunnerBook, on_delete=models.CASCADE)
 
@@ -124,3 +125,38 @@ class Bucket(models.Model):
     win_mean = models.FloatField()
     coef = models.FloatField()
     intercept = models.FloatField()
+
+
+class Bet(models.Model):
+    objects = BetManager()
+
+    market = models.ForeignKey(Market, on_delete=models.CASCADE)
+    runner = models.ForeignKey(Runner, on_delete=models.CASCADE)
+    bet_id = models.BigIntegerField()
+
+    est = models.FloatField()
+    trade = models.FloatField()
+    back = models.FloatField(null=True)
+    lay = models.FloatField(null=True)
+    margin = models.FloatField()
+    payout = models.FloatField()
+    liability = models.FloatField()
+
+    order_type = models.CharField(max_length=50)
+    persistence_type = models.CharField(max_length=50)
+    placed_at = models.DateTimeField()
+    price = models.FloatField()
+    size = models.FloatField()
+    side = models.CharField(max_length=20)
+    size_matched = models.FloatField(null=True)
+    size_remaining = models.FloatField(null=True)
+    size_lapsed = models.FloatField(null=True)
+    size_cancelled = models.FloatField(null=True)
+    size_voided = models.FloatField(null=True)
+    status = models.CharField(max_length=30)
+
+    outcome = models.CharField(max_length=50, null=True)
+    profit = models.FloatField(null=True)
+
+    def __str__(self):
+        return f'<Bet [{self.bet_id} {self.runner.cloth_number}] {self.size} x {self.price} {self.side}>'

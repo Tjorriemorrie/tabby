@@ -11,8 +11,8 @@ from django.utils import timezone
 from .secrets import APP_KEY_DEV, APP_URL_LOGIN, USERNAME, PASSWORD, APP_CERTS_DIR
 
 
-BaseEndpoint.connect_timeout = 5
-BaseEndpoint.read_timeout = 15
+BaseEndpoint.connect_timeout = 10
+BaseEndpoint.read_timeout = 30
 
 trading = APIClient(USERNAME, PASSWORD, APP_KEY_DEV, APP_CERTS_DIR)
 

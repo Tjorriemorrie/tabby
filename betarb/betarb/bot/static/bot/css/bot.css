@@ -62,3 +62,11 @@ table td {
 .bold {
     font-weight: bold;
 }
+
+.bf {
+    background: rgb(255, 184, 12);
+}
+
+.red {
+    background: indianred;
+}

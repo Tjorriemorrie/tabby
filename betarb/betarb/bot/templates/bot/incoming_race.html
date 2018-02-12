@@ -17,55 +17,59 @@
         </span>
     </div>
 
-    <div class="race_header">
-        <span>Betfair</span>
-        {% if not race.win_market %}
-            <span>&mdash;</span>
-            <span>&mdash;</span>
-            <span>&mdash;</span>
-        {% else %}
-            <span>event: {{ race.win_market.event.event_id }}</span>
-            <span>market: {{ race.win_market.market_id }}</span>
-            <span>book: {{ race.win_market.book_set.last.id }}</span>
-            <span>{{ race.win_market.book_set.last.last_match_time|secs }}</span>
-        {% endif %}
-    </div>
+    {% if race.win_market %}
 
-    <div class="race_body">
-        <table cellpadding="1" border="1">
-            <thead>
-            <tr>
-                <td>Number</td>
-                <td>Name</td>
-                <td class="green">Tab</td>
-                <td class="pink">Highest Lay</td>
-                <td class=""> {{ race.win_market.book_set.last.total_matched|floatformat:0 }}</td>
-                <td class="blue">Lowest Back</td>
-                <td class="gold">Est</td>
-            </tr>
-            </thead>
-            <tbody>
-            {% for r in race.runner_set.all %}
+        <div class="race_header">
+            <span>Betfair</span>
+            {% if not race.win_market %}
+                <span>&mdash;</span>
+                <span>&mdash;</span>
+                <span>&mdash;</span>
+            {% else %}
+                <span>event: {{ race.win_market.event.event_id }}</span>
+                <span>market: {{ race.win_market.market_id }}</span>
+                <span>book: {{ race.win_market.book_set.last.id }}</span>
+                <span>{{ race.win_market.book_set.last.last_match_time|secs }}</span>
+            {% endif %}
+        </div>
+
+        <div class="race_body">
+            <table cellpadding="1" border="1">
+                <thead>
                 <tr>
-                    <td>{{ r.runner_number }}</td>
-                    <td>{% if r.fixed_betting_status != 'Open' %}
-                        <del>{{ r.name }}</del>
-                    {% else %}
-                        {{ r.name }}
-                    {% endif %}</td>
-                    {% if r.fixed_betting_status != 'Open' %}
-                        <td colspan="5"></td>
-                    {% else %}
-                        <td class="green">{{ r.fo.first.win_dec|odds }}</td>
-                        <td class="pink">{{ r.lay|odds }}</td>
-                        <td class="">{{ r.trade|odds }}</td>
-                        <td class="blue">{{ r.back|odds }}</td>
-                        <td class="gold">{{ r.fo.first.win_est|as_odds|odds }}</td>
-                    {% endif %}
+                    <td>Number</td>
+                    <td>Name</td>
+                    <td class="green">Tab</td>
+                    <td class="pink">Highest Lay</td>
+                    <td class=""> {{ race.win_market.book_set.last.total_matched|floatformat:0 }}</td>
+                    <td class="blue">Lowest Back</td>
+                    <td class="gold">Est</td>
                 </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
+                </thead>
+                <tbody>
+                {% for r in race.runner_set.all %}
+                    <tr>
+                        <td>{{ r.runner_number }}</td>
+                        <td>{% if r.fixed_betting_status != 'Open' %}
+                            <del>{{ r.name }}</del>
+                        {% else %}
+                            {{ r.name }}
+                        {% endif %}</td>
+                        {% if r.fixed_betting_status != 'Open' %}
+                            <td colspan="5"></td>
+                        {% else %}
+                            <td class="green">{{ r.fo.first.win_dec|odds }}</td>
+                            <td class="pink">{{ r.lay|odds }}</td>
+                            <td class="">{{ r.trade|odds }}</td>
+                            <td class="blue">{{ r.back|odds }}</td>
+                            <td class="gold">{{ r.fo.first.win_est|as_odds|odds }}</td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    {% endif %}
 
 </div>

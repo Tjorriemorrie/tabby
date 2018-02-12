@@ -1,0 +1,30 @@
+{% extends 'bot/base.html' %}
+{% load static %}
+
+
+{% block content %}
+<div>
+    <h1>Backs</h1>
+    <h4>{{ backs|length }} bets</h4>
+    <p>{{ back_total }} total winnings</p>
+    <p>{{ back_wins }} total wins</p>
+    <p>{{ back_loss }} total losses</p>
+    <hr/>
+    <h1>Lays</h1>
+    <h4>{{ lays|length }} bets</h4>
+    <p>{{ lay_total }} total winnings</p>
+    <p>{{ lay_wins }} total wins</p>
+    <p>{{ lay_loss }} total losses</p>
+</div>
+{% endblock %}
+
+
+{% block stylesheets %}
+    {{ block.super }}
+    <link href="{% static 'bot/css/bot.css' %}" rel="stylesheet"/>
+{% endblock %}
+
+
+{% block javascripts %}
+    {{ block.super }}
+{% endblock %}

@@ -250,6 +250,7 @@ def analyze():
         has_results=True).filter(
         has_processed=False).all()
     for race in races:
+        Accuracy.objects.filter(race=race).delete()
         for runner in race.runner_set.all():
             result = runner.result if hasattr(runner, 'result') else None
             accuracy = Accuracy(race=race, runner=runner)
@@ -286,10 +287,10 @@ def analyze():
 def create_buckets():
     """buckets the abs errors for betting range values"""
     df = pd.DataFrame.from_records(Accuracy.objects.all().values())
-    # df['win_error_abs'] = df['win_error'].abs()
+    # df['win_error_abs'] = df['win_error']
     Bucket.objects.all().delete()
     bins = 0
-    while True:
+    while bins < 10:
         bins += 1
         df['bins'] = 1
         df['cats'] = pd.qcut(df['win_perc'], bins)
@@ -314,7 +315,7 @@ def create_buckets():
             )
 
             # check flag
-            if bucket.count <= 15:
+            if bucket.count <= 1:
                 flag_exit = True
 
         if flag_exit:

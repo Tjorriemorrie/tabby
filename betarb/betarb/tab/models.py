@@ -2,8 +2,8 @@ import logging
 
 from django.db import models
 
-from betfair.models import Market, RunnerBook
-from .managers import RaceManager, AccuracyManager, BucketManager, FixedOddManager
+from betfair.models import Market, RunnerBook, Runner as BfRunner
+from .managers import RaceManager, AccuracyManager, BucketManager, FixedOddManager, RunnerManager
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class Race(models.Model):
     number = models.IntegerField()
 
     link_self = models.CharField(max_length=255)
-    link_form = models.CharField(max_length=255)
+    link_form = models.CharField(max_length=255, null=True)
     link_big_bets = models.CharField(max_length=255)
     distance = models.IntegerField()
     name = models.CharField(max_length=50)
@@ -58,12 +58,17 @@ class Race(models.Model):
 
     @property
     def win_market(self):
-        return self.market_set.filter(
-            market_type='WIN'
-        ).get()
+        try:
+            return self.market_set.filter(
+                market_type='WIN'
+            ).get()
+        except:
+            return None
 
 
 class Runner(models.Model):
+    objects = RunnerManager()
+
     race = models.ForeignKey(Race, on_delete=models.CASCADE)
 
     link_form = models.CharField(max_length=255, null=True)
@@ -80,6 +85,9 @@ class Runner(models.Model):
     fixed_betting_status = models.CharField(max_length=20, null=True)
     parimutuel_betting_status = models.CharField(max_length=20, null=True)
 
+    def __str__(self):
+        return f'<Runner num={self.runner_number} name={self.name}>'
+
     def fo(self):
         return self.fixedodd_set.all()[:5]
 
@@ -91,49 +99,40 @@ class Runner(models.Model):
         return (first_perc - last_perc) / last_perc
 
     @property
+    def rbook(self):
+        if not hasattr(self, '_rbook'):
+            self._rbook = None
+            market = self.race.market_set.first()
+            if market:
+                book = market.book_set.last()
+                try:
+                    self._rbook = RunnerBook.objects.get(
+                        book=book,
+                        runner__cloth_number=self.runner_number
+                    )
+                except:
+                    self._rbook = None
+        return self._rbook
+
+    @property
     def back(self):
         """Current betfair best available back odds"""
-        market = self.race.market_set.first()
-        if not market:
-            return -2
-        book = market.book_set.last()
-        rbook = RunnerBook.objects.get(
-            book=book,
-            runner__cloth_number=self.runner_number
-        )
-        if not rbook:
-            return -1
-        return rbook.lay_price
+        if self.rbook:
+            return self.rbook.lay_price
 
     @property
     def lay(self):
         """Current betfair best available back odds"""
-        market = self.race.market_set.first()
-        if not market:
-            return -2
-        book = market.book_set.last()
-        rbook = RunnerBook.objects.get(
-            book=book,
-            runner__cloth_number=self.runner_number
-        )
-        if not rbook:
-            return -1
-        return rbook.back_price
+        if self.rbook:
+            return self.rbook.back_price
 
     @property
     def trade(self):
         """Current betfair best available back odds"""
-        market = self.race.market_set.first()
-        if not market:
-            return -2
-        book = market.book_set.last()
-        rbook = RunnerBook.objects.get(
-            book=book,
-            runner__cloth_number=self.runner_number
-        )
-        if not rbook:
-            return -1
-        return rbook.last_price_traded
+        if self.rbook:
+            if not self.rbook.last_price_traded:
+                return None
+            return self.rbook.last_price_traded
 
 
 class FixedOdd(models.Model):
@@ -188,7 +187,7 @@ class ParimutuelOdd(models.Model):
     runner = models.ForeignKey(Runner, on_delete=models.CASCADE)
     as_at = models.DateTimeField()
     win_dec = models.FloatField()
-    place_dec = models.FloatField()
+    place_dec = models.FloatField(null=True)
 
     class Meta:
         ordering = ['-as_at']

@@ -1,24 +1,63 @@
-<div id="race_{{ race.pk }}">
-    <div class="race_header">
-        <span class="venue"><a href="{{ race.link_self }}" target="_blank">
-            [{{ race.meeting.location }}]
-            [{{ race.meeting.race_type }}]
-            {{ race.meeting.name }} &mdash;
-            {{ race.number }}
-        </a></span>
-        <span class="title">
-            {{ race.name|title }}
-        </span>
-        <span class="time">{{ race.start_time|timesince }}</span>
+{% load percentage %}
+
+{% if race.win_market %}
+
+    <div id="race_{{ race.pk }}">
+        <div class="race_header">
+            <span class="venue"><a href="{{ race.link_self }}" target="_blank">
+                [{{ race.meeting.location }}]
+                [{{ race.meeting.race_type }}]
+                {{ race.meeting.name }} &mdash;
+                {{ race.number }}
+            </a></span>
+            <span class="time">{{ race.start_time|timesince }}</span>
+        </div>
+
+
+        <div class="race_body">
+            <table cellpadding="1" border="1">
+                <thead>
+                <tr>
+                    <td></td>
+                    <td>#</td>
+                    <td>Name</td>
+                    <td class="green">Tab</td>
+                    <td class="gold">Est</td>
+                    <td class="bf"> {{ race.win_market.book_set.last.total_matched|floatformat:0 }}</td>
+                    <td>Bet</td>
+                    <td>Outcome</td>
+                </tr>
+                </thead>
+                <tbody>
+                    {% for r in race.runner_set.all %}
+                        {% if r.rbook.runner.bet_set.count or r.result.pos %}
+                            <tr>
+                                <td>{{ r.result.pos }}</td>
+                                <td>{{ r.runner_number }}</td>
+                                <td>{{ r.name }}</td>
+                                <td class="green">{{ r.fo.first.win_dec|odds }}</td>
+                                <td class="gold">{{ r.fo.first.win_est|as_odds|odds }}</td>
+                                <td class="bf">{{ r.trade|odds }}</td>
+                                {% for bet in r.rbook.runner.bet_set.all %}
+                                    <td class="{% if bet.side == 'BACK' %}blue{% else %}pink{% endif %}"> {{ bet.side|lower }} {{ bet.price }}</td>
+                                    {% if bet.size_matched %}
+                                        {% if bet.profit %}
+                                            <td class="{% if bet.outcome == 'WON' %}green{% else %}red{% endif %}">{% firstof bet.profit %}</td>
+                                        {% else %}
+                                            <td></td>
+                                        {% endif %}
+                                    {% else %}
+                                        <td colspan="1">&mdash;</td>
+                                    {% endif %}
+                                {% empty %}
+                                    <td colspan="2"></td>
+                                {% endfor %}
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 
-    <div class="race_body">
-        {% if not race.result_set.all %}
-            <p>no results yet</p>
-        {% else %}
-            {% for res in race.result_set.all %}
-                <p>{{ res.pos }} {{ res.runner.runner_number }} {{ res.runner.name }}</p>
-            {% endfor %}
-        {% endif %}
-    </div>
-</div>
+{% endif %}

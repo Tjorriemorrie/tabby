@@ -8,9 +8,9 @@ register = template.Library()
 def percentage(val, dec=None):
     val *= 100
     if dec is None:
-        if val < 1:
+        if abs(val) < 1:
             dec = 2
-        elif val < 10:
+        elif abs(val) < 10:
             dec = 1
         else:
             dec = 0
