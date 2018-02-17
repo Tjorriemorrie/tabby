@@ -59,6 +59,13 @@ class Runner(models.Model):
     def __str__(self):
         return f'<Runner [{self.selection_id}] num={self.cloth_number} name={self.name}>'
 
+    def matched_bets(self):
+        """Return all open bets for current runner"""
+        return self.bet_set.filter(
+            outcome__isnull=True,
+            status='EXECUTION_COMPLETE'
+        ).all()
+
 
 class Book(models.Model):
     market = models.ForeignKey(Market, on_delete=models.CASCADE)
@@ -135,10 +142,11 @@ class Bet(models.Model):
     bet_id = models.BigIntegerField()
 
     est = models.FloatField()
-    trade = models.FloatField()
+    trade = models.FloatField(null=True)
     back = models.FloatField(null=True)
     lay = models.FloatField(null=True)
     margin = models.FloatField()
+    bracket = models.IntegerField()
     payout = models.FloatField()
     liability = models.FloatField()
 

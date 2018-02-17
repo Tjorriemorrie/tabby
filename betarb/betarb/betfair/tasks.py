@@ -5,7 +5,8 @@ import re
 from django.core.cache import cache
 
 import pandas as pd
-from betfairlightweight.filters import market_filter, time_range, price_projection, price_data, place_instruction, limit_order
+from betfairlightweight.filters import market_filter, time_range, price_projection, price_data, place_instruction, \
+    limit_order, cancel_instruction
 from celery import shared_task
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -342,7 +343,7 @@ def analyze():
             try:
                 rbook = RunnerBook.objects.filter(
                     book=market.book_set.last(),
-                    runner__cloth_number=tab_runner.runner_number).get()
+                    runner__cloth_number=tab_runner.runner_number).last()
             except RunnerBook.DoesNotExist:
                 logger.error(f'RunnerBook not found for {tab_runner}')
                 continue
@@ -373,7 +374,7 @@ def create_buckets():
     # df['win_error_abs'] = df['win_error'].abs()
     Bucket.objects.all().delete()
     bins = 0
-    while bins < 10:
+    while bins < 12:
         bins += 1
         df['bins'] = 1
         df['cats'] = pd.qcut(df['perc'], bins)
@@ -413,122 +414,181 @@ def create_buckets():
 @shared_task
 def run_bet():
     """list and make bets"""
-    betting = cache.get('betting')
-    if not betting:
-        logger.warning('No betting')
-        return
-
-    list_current_bets()
-    list_settled_bets()
-    list_lapsed_bets()
-    place_bets.apply_async()
-
-
-@shared_task
-def place_bets():
-    """makes bets. This will run once every minute. We only pick races starting
-    within the last minute. No previous bets, just make bets. Races start normally
-    on the minute and this task will run on the 30th second."""
-    logger.info('$' * 80)
-    amt = 5
-    margin = 0.05
-    time_ago = timezone.now() - datetime.timedelta(seconds=30)
-    time_fwd = timezone.now()
+    # for every market
+    #  - do not bet on runners with existing bet
+    #  - bet based on remaining minutes from 15 to 5
+    #    for 5 minutes from start, every minute
+    time_ago = timezone.now()
+    time_fwd = timezone.now() + datetime.timedelta(minutes=5)
     races = Race.objects.filter(
         start_time__gte=time_ago,
         start_time__lte=time_fwd
     ).all()
-    if not races:
-        logger.warning('No races to bet on')
+
+    if Bet.objects.count():
+        # update previous bets
+        list_settled_bets()
+        list_lapsed_bets()
+        list_cancelled_bets()
+
+    betting = cache.get('betting')
+    if not betting:
+        logger.warning('$$$ No betting')
         return
 
-    trading = get_betfair_client()
+    if not races:
+        logger.warning('$$$ No races to bet on')
+        return
+
+    # update current bets
+    #  can do all current bets for all markets, and then bet on each market in time
+    list_current_bets()
+
     for race in races:
         market = race.win_market
         if not market:
-            logger.error(f'No market for {race}')
-            continue
-        logger.warning(f'$$$ Betting on {race}')
+            logger.error(f'$$$ no betfair market for {race}')
+            return
+        create_bets.apply_async((race.pk,), countdown=1)
 
-        ix = []
-        ix_info = {}
-        for runner in race.runner_set.all():
-            try:
-                bf_runner = market.runner_set.get(cloth_number=runner.runner_number)
-            except Exception as e:
-                logger.error(f'$$ {e}')
-                logger.warning(f'No betfair for {runner}')
-                continue
-            trade = runner.trade
-            if not trade:
-                logger.warning(f'no trade for {runner}')
-                continue
-            fo = runner.fixedodd_set.first()
-            est = 1 / fo.win_est
-            if est >= 10:
-                logger.warning(f'Odds {est} too bad for {runner}')
-                continue
-            for side in ['BACK', 'LAY']:
-                # e.g. to back: est 4.5 < trade 5.5 (at 95%)
-                if side == 'BACK' and est > trade * (1 - margin):
-                    logger.warning(f'No profitable {side} bet for {runner}')
-                    continue
-                # e.g. to lay: est 8.80 > trade 6.70 (at 105%)
-                if side == 'LAY' and est < trade * (1 + margin):
-                    logger.warning(f'No profitable {side} bet for {runner}')
-                    continue
-                ix.append(place_instruction(
-                    'LIMIT', bf_runner.selection_id, side,
-                    limit_order=limit_order(persistence_type='LAPSE',
-                                            size=amt, price=trade)))
-                logger.warning(f'Placed bet {runner.runner_number}: {side} {amt}x {trade}')
-                ix_info[bf_runner.selection_id] = {
-                    'bf_runner': bf_runner,
-                    'est': est,
-                    'trade': trade,
-                    'back': runner.back,
-                    'lay': runner.lay,
-                    'margin': margin,
-                }
 
-        if not ix:
-            logger.error(f'No ix for {market}')
+AMOUNT = 5
+MARGIN_BRACKETS = {
+    0: 0.10,
+    1: 0.14,
+    2: 0.18,
+    3: 0.22,
+    4: 0.26,
+}
+
+
+@shared_task
+def create_bets(pk):
+    """
+    Place bets with the specified margin.
+    Can place back and lay side bets.
+    """
+    trading = get_betfair_client()
+    race = Race.objects.get(pk=pk)
+    market = race.win_market
+
+    # establish margin bracket of betting
+    secs_left = (race.start_time - timezone.now()).total_seconds()
+    bracket = secs_left // 60
+    margin = MARGIN_BRACKETS.get(bracket)
+    if not margin:
+        logger.error(f'$$$ Huge minutes for {market}: {bracket}')
+        return
+    logger.warning(f'$$$ Betting on {race} in {bracket} bracket margin {margin}')
+
+    # cancel all existing bets
+    cancel_bets(market)
+
+    ix = []
+    ix_info = {}
+    for runner in race.runner_set.all():
+        try:
+            bf_runner = market.runner_set.get(cloth_number=runner.runner_number)
+        except Exception as e:
+            logger.info(f'$$$ No betfair {runner} {e}')
             continue
 
-        # place orders
-        res = trading.betting.place_orders(
-            market.market_id,
-            instructions=ix,
-            lightweight=True)
-        # print(json.dumps(res, indent=4, default=str, sort_keys=True))
-        if res['status'] != 'SUCCESS':
-            raise Exception(f'Market {res["marketId"]}: {res["errorCode"]}')
-        for ix in res['instructionReports']:
-            bet_info = ix_info[ix['instruction']['selectionId']]
-            if ix['instruction']['side'] == 'BACK':
-                liability = ix['instruction']['limitOrder']['size']
-                payout = ix['instruction']['limitOrder']['size'] * (ix['instruction']['limitOrder']['price'] - 1)
-            else:
-                liability = ix['instruction']['limitOrder']['size'] * (ix['instruction']['limitOrder']['price'] - 1)
-                payout = ix['instruction']['limitOrder']['size']
-            bet = Bet(market=market, runner=bet_info['bf_runner'], bet_id=ix['betId'],
-                      est=bet_info['est'], trade=bet_info['trade'],
-                      back=bet_info['back'], lay=bet_info['lay'],
-                      margin=margin, payout=payout, liability=liability,
+        matched_bets = bf_runner.matched_bets()
+        if matched_bets:
+            logger.info(f'$$$ Runner already has bet {matched_bets}')
+            continue
 
-                      status=ix['orderStatus'],
-                      placed_at=parse_datetime(ix['placedDate']),
-                      size_matched=ix['sizeMatched'],
+        fo = runner.fixedodd_set.first()
+        if not fo:
+            logger.info(f'$$$ Runner already has no tab odds {runner}')
+            continue
 
-                      order_type=ix['instruction']['orderType'],
-                      side=ix['instruction']['side'],
+        est = fo.win_est
+        if est < 0.09:
+            logger.info(f'$$$ Bad odds for {runner} {est}')
+            continue
 
-                      persistence_type=ix['instruction']['limitOrder']['persistenceType'],
-                      price=ix['instruction']['limitOrder']['price'],
-                      size=ix['instruction']['limitOrder']['size'])
-            bet.save()
-            logger.warning(f'Created {bet}')
-        logger.warning(f'Placed {len(ix)} bets for {market}')
+        # back
+        # est   desire 10%  odds    highestLay  trade
+        # 20%   18%         4.55    4.60        4.70    => 4.70
+        # 20%   18%         4.55    4.50        4.60    => 4.60
+        # 20%   18%         4.55    4.40        4.50    => 4.55
+        back_desire = 1 / (est * (1 - margin))
+        back_price = max(back_desire, runner.trade or float('-inf'), runner.lay or float('-inf'))
+        ix.append(place_instruction(
+            'LIMIT', bf_runner.selection_id, 'BACK',
+            limit_order=limit_order(persistence_type='LAPSE',
+                                    size=AMOUNT,
+                                    price=get_odds(back_price))))
+        logger.info(f'$$$ Placed bet {runner.runner_number}: BACK {back_price}')
+
+        # lay
+        # est   desire 10%  odds    lowestBack  trade
+        # 20%   22%         4.55    4.70        4.60    => 4.55
+        # 20%   22%         4.55    4.60        4.50    => 4.50
+        # 20%   22%         4.55    4.50        4.40    => 4.40
+        lay_desire = 1 / (est * (1 + margin))
+        lay_price = min(lay_desire, runner.trade or float('inf'), runner.lay or float('inf'))
+        ix.append(place_instruction(
+            'LIMIT', bf_runner.selection_id, 'LAY',
+            limit_order=limit_order(persistence_type='LAPSE',
+                                    size=AMOUNT,
+                                    price=get_odds(lay_price))))
+        logger.info(f'$$$ Placed bet {runner.runner_number}: BACK {lay_price}')
+
+        ix_info[bf_runner.selection_id] = {
+            'bf_runner': bf_runner,
+            'est': est,
+            'back_price': back_price,
+            'lay_price': lay_price,
+            'back': runner.back,
+            'lay': runner.lay,
+            'trade': runner.trade,
+            'margin': margin,
+            'bracket': bracket,
+        }
+
+    if not ix:
+        logger.error(f'$$$ No ix for {race}')
+        return
+
+    # place orders
+    res = trading.betting.place_orders(
+        market.market_id,
+        instructions=ix,
+        lightweight=True)
+    # print(json.dumps(res, indent=4, default=str, sort_keys=True))
+    if res['status'] != 'SUCCESS':
+        for bet_info in res['instructionReports']:
+            logger.error(f'{bet_info["status"]} {bet_info["errorCode"]}')
+        raise Exception(f'$$$ Market {res["marketId"]}: {res["errorCode"]}')
+    for ix in res['instructionReports']:
+        bet_info = ix_info[ix['instruction']['selectionId']]
+        if ix['instruction']['side'] == 'BACK':
+            liability = ix['instruction']['limitOrder']['size']
+            payout = ix['instruction']['limitOrder']['size'] * (ix['instruction']['limitOrder']['price'] - 1)
+        else:
+            liability = ix['instruction']['limitOrder']['size'] * (ix['instruction']['limitOrder']['price'] - 1)
+            payout = ix['instruction']['limitOrder']['size']
+        bet = Bet(market=market, runner=bet_info['bf_runner'], bet_id=ix['betId'],
+                  est=bet_info['est'], trade=bet_info['trade'],
+                  back=bet_info['back'], lay=bet_info['lay'],
+                  margin=margin, bracket=bracket,
+                  payout=payout, liability=liability,
+
+                  status=ix['orderStatus'],
+                  placed_at=parse_datetime(ix['placedDate']),
+                  size_matched=ix['sizeMatched'],
+
+                  order_type=ix['instruction']['orderType'],
+                  side=ix['instruction']['side'],
+
+                  persistence_type=ix['instruction']['limitOrder']['persistenceType'],
+                  price=ix['instruction']['limitOrder']['price'],
+                  size=ix['instruction']['limitOrder']['size'])
+        bet.save()
+        logger.warning(f'$$$ Created {bet}')
+    logger.warning(f'$$$ Placed {len(ix)} bets for {market}')
 """
         {
             "averagePriceMatched": 0.0,
@@ -550,6 +610,32 @@ def place_bets():
         },
 
 """
+
+
+def cancel_bets(market):
+    existing_bets = market.bet_set.filter(
+        outcome__isnull=True,
+        status='EXECUTABLE'
+    ).all()
+
+    if existing_bets:
+        trading = get_betfair_client()
+        res = trading.betting.cancel_orders(
+            market_id=market.market_id,
+            instructions=[cancel_instruction(bet_id=b.bet_id) for b in existing_bets],
+            lightweight=True)
+        # print(json.dumps(res, indent=4, default=str, sort_keys=True))
+        if res['status'] not in ['SUCCESS', 'PROCESSED_WITH_ERRORS']:
+            raise Exception(f'$$$ Cannot cancel! {res["marketId"]}: {res["errorCode"]}')
+        for item in res['instructionReports']:
+            bet = Bet.objects.get(bet_id=item['instruction']['betId'])
+            if item['status'] != 'SUCCESS':
+                logger.error(f'Could not cancel {bet}')
+                bet.status = 'EXECUTION_COMPLETE'
+            else:
+                bet.status = 'CANCELLED'
+            bet.save()
+            logger.info(f'$$$ Cancelled {bet}')
 
 
 def list_current_bets():
@@ -714,6 +800,41 @@ def list_lapsed_bets():
             logger.error(f'Created lapsed {bet}')
         else:
             logger.warning(f'Updated lapsed {bet}')
+
+
+def list_cancelled_bets():
+    """
+    list_cleared_bets
+    list from market status 'cancelled'
+    update market status 'placed' to 'finished'
+    """
+    bets = Bet.objects.outstanding()
+    if not bets:
+        logger.info(f'No cancelled bets to look up')
+        return
+    logger.warning(f'Looking up {len(bets)} cancelled bets...')
+
+    trading = get_betfair_client()
+    res = trading.betting.list_cleared_orders(
+        bet_status='CANCELLED',
+        bet_ids=[b.bet_id for b in bets],
+        lightweight=True)
+    # print(json.dumps(res, indent=4, default=str, sort_keys=True))
+    for ix in res['clearedOrders']:
+        market = Market.objects.get(market_id=ix['marketId'])
+        bf_runner = Runner.objects.get(selection_id=ix['selectionId'])
+        bet, created = Bet.objects.update_or_create(
+            bet_id=ix['betId'],
+            market=market,
+            runner=bf_runner,
+            defaults={
+                'status': 'CANCELLED',
+                'size_cancelled': ix['sizeCancelled'],
+            })
+        if created:
+            logger.error(f'Created cancelled {bet}')
+        else:
+            logger.warning(f'Updated cancelled {bet}')
 
 
 def get_odds(odd):

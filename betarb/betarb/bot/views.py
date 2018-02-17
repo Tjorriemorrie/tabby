@@ -27,6 +27,7 @@ def index(request):
         'backs_roi': sum(winnings['backs']) / (len(winnings['backs']) * 5),
         'lays_pp': sum(winnings['lays']) / len(winnings['lays']),
         'lays_roi': sum(winnings['lays']) / (len(winnings['lays']) * 5),
+        'brackets': _get_bracket_margins(),
     }
 
     return render(request, 'bot/index.html', context)
@@ -112,13 +113,13 @@ def _get_winnings():
                     continue
                 won = runner.accuracy.won
                 # lay when est is higher (market is below expected)
-                if est > (trade * 1.05) and back < 10:
+                if est > (trade * 1.05) and back < 9:
                     if won:
                         lay_winnings.append(-amt * (trade - 1))
                     else:
                         lay_winnings.append(amt * 0.95)
                 # back when est is lower (market is above expected)
-                elif est < (trade * 0.95) and back < 10:
+                elif est < (trade * 0.95) and back < 9:
                     if won:
                         back_winnings.append(amt * (trade - 1) * 0.95)
                     else:
@@ -129,3 +130,20 @@ def _get_winnings():
         }
         cache.set('winnings', winnings)
     return winnings
+
+
+def _get_bracket_margins():
+    df = pd.DataFrame.from_records(Bet.objects.all().values())
+    groups = df.groupby(['bracket', 'margin'])
+    vals = groups['bet_id'].count().to_dict()
+    dfb = df[df['size_matched'] > 0]
+    groupsb = dfb.groupby(['bracket', 'margin'])
+    valsb = groupsb['bet_id'].count().to_dict()
+    data = {}
+    for grp, cnt in vals.items():
+        data[grp] = {'count': cnt}
+        if not cnt or grp not in valsb:
+            data[grp]['matched'] = 0
+        else:
+            data[grp]['matched'] = valsb[grp] / cnt
+    return data

@@ -38,9 +38,9 @@ class BetManager(Manager):
         )['roi']
 
     def outstanding(self):
-        """Calculates roi for all bets"""
+        """All outstanding bets"""
         return super().get_queryset().filter(
             outcome__isnull=True,
         ).exclude(
-            status='LAPSED'
+            status__in=['LAPSED', 'CANCELLED']
         ).all()

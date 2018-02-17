@@ -20,12 +20,10 @@
                 <tr>
                     <td></td>
                     <td>#</td>
-                    <td>Name</td>
+{#                    <td>Name</td>#}
                     <td class="green">Tab</td>
                     <td class="gold">Est</td>
                     <td class="bf"> {{ race.win_market.book_set.last.total_matched|floatformat:0 }}</td>
-                    <td>Bet</td>
-                    <td>Outcome</td>
                 </tr>
                 </thead>
                 <tbody>
@@ -34,17 +32,19 @@
                             <tr>
                                 <td>{{ r.result.pos }}</td>
                                 <td>{{ r.runner_number }}</td>
-                                <td>{{ r.name }}</td>
+{#                                <td>{{ r.name }}</td>#}
                                 <td class="green">{{ r.fo.first.win_dec|odds }}</td>
                                 <td class="gold">{{ r.fo.first.win_est|as_odds|odds }}</td>
                                 <td class="bf">{{ r.trade|odds }}</td>
                                 {% for bet in r.rbook.runner.bet_set.all %}
-                                    <td class="{% if bet.side == 'BACK' %}blue{% else %}pink{% endif %}"> {{ bet.side|lower }} {{ bet.price }}</td>
+                                    <td class="{% if bet.side == 'BACK' %}blue{% else %}pink{% endif %}">{{ bet.price }}</td>
                                     {% if bet.size_matched %}
                                         {% if bet.profit %}
-                                            <td class="{% if bet.outcome == 'WON' %}green{% else %}red{% endif %}">{% firstof bet.profit %}</td>
+                                            <td
+                                            class="{% if bet.outcome == 'WON' %}green{% else %}red{% endif %}"
+                                            title="{{ bet.id }} {{ bet.size_matched }}">{% firstof bet.profit %}</td>
                                         {% else %}
-                                            <td></td>
+                                            <td>?</td>
                                         {% endif %}
                                     {% else %}
                                         <td colspan="1">&mdash;</td>

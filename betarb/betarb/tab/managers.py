@@ -17,8 +17,6 @@ class RaceManager(models.Manager):
         """Races that finished recently"""
         return super().get_queryset().prefetch_related('runner_set').filter(
             start_time__lte=timezone.now()
-        ).filter(
-            has_fixed_odds=True
         ).order_by('-start_time')[:limit]
 
 

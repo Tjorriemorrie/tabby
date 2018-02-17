@@ -44,6 +44,26 @@
     {% endif %}</p>
     <p>{{ backs_pp|floatformat:2 }} backs {{ backs_roi|percentage }} roi</p>
     <p>{{ lays_pp|floatformat:2 }} lays {{ lays_roi|percentage }} roi</p>
+    <table>
+        <thead>
+        <tr>
+            <td>Bracket</td>
+            <td>Margin</td>
+            <td>Count</td>
+            <td>Matched</td>
+        </tr>
+        </thead>
+        <tbody>
+        {% for bracket_margin, data in brackets.items %}
+            <tr>
+                <td>{{ bracket_margin.0 }}</td>
+                <td>{{ bracket_margin.1 }}</td>
+                <td>{{ data.count }}</td>
+                <td>{{ data.matched|percentage }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
 
     <br/>
     <hr/>

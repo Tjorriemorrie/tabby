@@ -63,6 +63,9 @@
                             <td class="">{{ r.trade|odds }}</td>
                             <td class="blue">{{ r.back|odds }}</td>
                             <td class="gold">{{ r.fo.first.win_est|as_odds|odds }}</td>
+                            {% for bet in r.rbook.runner.matched_bets %}
+                                <td class="{% if bet.side == 'BACK' %}blue{% else %}pink{% endif %}">{{ bet.price }}</td>
+                            {% endfor %}
                         {% endif %}
                     </tr>
                 {% endfor %}

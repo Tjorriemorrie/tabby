@@ -290,7 +290,7 @@ def create_buckets():
     # df['win_error_abs'] = df['win_error']
     Bucket.objects.all().delete()
     bins = 0
-    while bins < 10:
+    while bins < 12:
         bins += 1
         df['bins'] = 1
         df['cats'] = pd.qcut(df['win_perc'], bins)
