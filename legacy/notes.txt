@@ -1,0 +1,34 @@
+BUILDrun
+for races (for race and bet)
+run buildshare (add result and dividend kwarg)
+save to db
+
+BUILDshare
+runners, r
+combs
+- no result
+- no dividend
+- no pred
+
+PREDICTrun
+load combs from db (for race and bet)
+run predictshare
+save back to db
+
+PREDICTshare
+given comb
+do pred from model
+return comb
+
+1) run buildrun
+2) run keras training (will just load from db)
+3) run predict
+4) run optimization
+
+BETshare
+given combs with pred, runners, x
+sort runners with highest odds
+box from all_runners to r
+filter for all combs with runnernumbers in box
+break on x numpy.percentile
+return runner numbers for box
