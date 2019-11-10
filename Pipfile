@@ -7,6 +7,10 @@ verify_ssl = true
 
 [packages]
 django = "*"
+django-celery-beat = "*"
+django-celery-results = "*"
+celery = {extras = ["django", "redis"],version = "*"}
+requests = "*"
 
 [requires]
 python_version = "3.7"

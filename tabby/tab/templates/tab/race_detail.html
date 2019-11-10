@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <p><small><a href="{% url 'meeting' pk=object.meeting.pk %}">Back to {{ object.meeting.name }}</a></small></p>
+    <h3>{{ object.number }} &mdash; <small>{{ object.name }}</small></h3>
+    <h4>Time: {{ object.start_time|time:"G:i" }}</h4>
+
+    <table border="1" cellpadding="5">
+    <thead>
+        <tr>
+            <th>Results</th>
+            <th>Barrier no</th>
+            <th>Runner</th>
+            <th>Last 5 starts</th>
+            <th>DFS form</th>
+            <th>Tech form</th>
+            <th>Fixed betting</th>
+            <th>Tote betting</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for runner in object.runner_set.all %}
+            <tr>
+                <td>{{ runner.result.pos }}</td>
+                <td>{{ runner.barrier_number }}</td>
+                <td>{{ runner.runner_number }} &mdash; {{ runner.name }}</td>
+                <td>{{ runner.last_5_starts }}</td>
+                <td>{{ runner.dfs_form_rating }}</td>
+                <td>{{ runner.tech_form_rating }}</td>
+                <td>{{ runner.fixed_betting_status }}</td>
+                <td>{{ runner.parimutuel_betting_status }}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+    </table>
+{% endblock %}

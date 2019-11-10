@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h3>Meetings</h3>
+    <table border="1" cellpadding="5">
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Venue</th>
+            <th>Track</th>
+            <th>Weather</th>
+            <th>Finished</th>
+            <th>Unprocessed</th>
+            <th>Upcoming</th>
+        </tr>
+        </thead>
+        <tbody>
+            {% for object in object_list %}
+                <tr>
+                    <td><a href="{% url 'meeting' pk=object.pk %}">{{ object.name }}</a></td>
+                    <td>{{ object.date }}</td>
+                    <td>{{ object.race_type }}</td>
+                    <td>{{ object.venue_mnemonic }}</td>
+                    <td>{{ object.track_condition }}</td>
+                    <td>{{ object.weather_condition }}</td>
+                    <td>{% for race in object.races_finished %}
+                        {{ race.number }}
+                    {% endfor %}</td>
+                    <td>{% for race in object.races_unprocessed %}
+                        {{ race.number }}
+                    {% endfor %}</td>
+                    <td>{% for race in object.races_upcoming %}
+                        {{ race.number }}
+                    {% endfor %}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

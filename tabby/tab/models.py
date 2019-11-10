@@ -3,7 +3,7 @@ import logging
 from django.db import models
 
 from betfair.models import Market, RunnerBook, Runner as BfRunner
-from .managers import RaceManager, AccuracyManager, BucketManager, FixedOddManager, RunnerManager
+from .managers import RaceManager, FixedOddManager, RunnerManager
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,15 @@ class Meeting(models.Model):
     track_condition = models.CharField(max_length=30, null=True)
     venue_mnemonic = models.CharField(max_length=10)
     weather_condition = models.CharField(max_length=30, null=True)
+
+    def races_finished(self):
+        return Race.objects.handled(self, True, True).all()
+
+    def races_unprocessed(self):
+        return Race.objects.handled(self, True).all()
+
+    def races_upcoming(self):
+        return Race.objects.handled(self).all()
 
 
 class Race(models.Model):
@@ -52,6 +61,9 @@ class Race(models.Model):
 
     has_results = models.BooleanField(default=False)
     has_processed = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['start_time']
 
     def __str__(self):
         return f'<Race [{self.id}] {self.meeting.name} R{self.number} time={self.start_time}>'
@@ -84,6 +96,9 @@ class Runner(models.Model):
     tech_form_rating = models.IntegerField(null=True)
     fixed_betting_status = models.CharField(max_length=20, null=True)
     parimutuel_betting_status = models.CharField(max_length=20, null=True)
+
+    class Meta:
+        ordering = ['barrier_number', 'runner_number']
 
     def __str__(self):
         return f'<Runner num={self.runner_number} name={self.name}>'
@@ -147,22 +162,12 @@ class FixedOdd(models.Model):
         ordering = ['-as_at']
 
     @property
-    def bucket(self):
-        """Get bucket for current win odds"""
-        return Bucket.objects.get_fo(self)
-
-    @property
     def win_perc(self):
         return 1 / self.win_dec if self.win_dec else 0
 
     @property
-    def win_est(self):
-        """Give win est for given win_perc"""
-        if not self.win_dec:
-            return 0
-        bucket = self.bucket
-        est = bucket.coef * self.win_perc + bucket.intercept
-        return max(0, min(1, est))
+    def place_perc(self):
+        return 1 / self.place_dec if self.place_dec else 0
 
     @property
     def win_back(self):
@@ -201,32 +206,25 @@ class Result(models.Model):
     class Meta:
         ordering = ['pos']
 
+    @property
+    def won(self):
+        return self.pos == 1
 
-class Accuracy(models.Model):
-    objects = AccuracyManager()
+    @property
+    def placed(self):
+        return self.pos <= self.race.number_of_places
 
+
+class RunnerMeta(models.Model):
     race = models.ForeignKey(Race, on_delete=models.CASCADE)
     runner = models.OneToOneField(Runner, on_delete=models.CASCADE)
 
-    win_dec = models.FloatField(null=True)
-    win_perc = models.FloatField(null=True)
-    won = models.NullBooleanField()
-    win_error = models.FloatField(null=True)
+    win_odds = models.FloatField()
+    place_odds = models.FloatField()
+    rating = models.FloatField()
 
-    place_dec = models.FloatField(null=True)
-    place_perc = models.FloatField(null=True)
-    place = models.NullBooleanField()
-    place_error = models.FloatField(null=True)
+    won = models.BooleanField()
+    placed = models.BooleanField()
 
-
-class Bucket(models.Model):
-    objects = BucketManager()
-
-    bins = models.IntegerField()
-    left = models.FloatField()
-    right = models.FloatField()
-    total = models.IntegerField()
-    count = models.IntegerField()
-    win_mean = models.FloatField()
-    coef = models.FloatField()
-    intercept = models.FloatField()
+    def __str__(self):
+        return f'RunnerMeta(race={self.race} runner={self.runner})'

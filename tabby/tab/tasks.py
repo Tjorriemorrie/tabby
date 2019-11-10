@@ -1,19 +1,14 @@
-from betfair.tasks import monitor_market_book
 import datetime
 import logging
 import re
 
-import pandas as pd
 import requests
 from celery import shared_task
 from django.core.cache import cache
-from django.db import IntegrityError
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from sklearn.linear_model import LinearRegression
 
-from betfair.models import Market
-from .models import Meeting, Race, Result, Accuracy, Bucket
+from .models import Meeting, Race, Result, RunnerMeta
 
 logger = logging.getLogger(__name__)
 
@@ -172,13 +167,11 @@ def monitor_race(pk):
             countdown += 60 if countdown < 30 and delta.seconds > 120 else 0
         logger.warning(f'{race.meeting.name} {race.number}: waiting {countdown} till next odds scrape')
         monitor_race.apply_async((pk,), countdown=countdown)
-        monitor_market_book.delay(pk)
 
     # race started but no results
     else:
         logger.warning(f'{race.meeting.name} {race.number}: race has started - waiting for results')
         monitor_race.apply_async((pk,), countdown=55)
-        monitor_market_book.delay(pk)
 
 
 @shared_task
@@ -204,9 +197,48 @@ def upsert_results(pk, res):
 
 @shared_task
 def post_process():
+    add_meta()
+
+
+@shared_task
+def add_meta():
+    """create runner metas for unprocessed races"""
+    # fetch all unprocessed races
+    races = Race.objects.filter(
+        has_results=True).filter(
+        has_processed=False).all()
+
+    for race in races:
+        for runner in race.runner_set.all():
+            result = runner.result if hasattr(runner, 'result') else None
+            odds = runner.fixedodd_set.first()
+            if not odds:
+                logger.warning(f'No fixed odds for {runner}')
+                continue
+            runner_meta, created = RunnerMeta.objects.update_or_create(
+                race=race,
+                runner=runner,
+                defaults={
+                    'win_odds': odds.win_perc,
+                    'place_odds': odds.place_perc,
+                    'rating': runner.dfs_form_rating / 100,
+                    'won': result.won if result else False,
+                    'placed': result.placed if result else False,
+                })
+            if created:
+                logger.info(f'Created {runner_meta}')
+
+        race.has_processed = True
+        race.save()
+        logger.warning(f'Created meta for {race} runners')
+    logger.warning(f'>>>> Task add_meta finished for {len(races)} races')
+    return len(races)
+
+
+@shared_task
+def cleanup():
     race_cleanup()
-    if analyze():
-        create_buckets()
+    meeting_cleanup()
 
 
 @shared_task
@@ -238,86 +270,14 @@ def race_cleanup():
         # then rather delete worthless race info
         r = race.delete()
         logger.warning(f'Deleted race: {r}')
-    logger.warning(f'>>>> Race cleanup done on {len(races)} races')
+    logger.warning(f'>>>> Race cleanup done on {len(races)} objects')
 
 
 @shared_task
-def analyze():
-    """create analysis for results"""
-
-    # update races
-    races = Race.objects.filter(
-        has_results=True).filter(
-        has_processed=False).all()
-    for race in races:
-        Accuracy.objects.filter(race=race).delete()
-        for runner in race.runner_set.all():
-            result = runner.result if hasattr(runner, 'result') else None
-            accuracy = Accuracy(race=race, runner=runner)
-
-            fo = runner.fixedodd_set.first()
-            if not fo:
-                continue
-
-            if fo.win_dec:
-                accuracy.won = bool(result) and result.pos == 1
-                accuracy.win_dec = fo.win_dec
-                accuracy.win_perc = 1 / fo.win_dec
-                accuracy.win_error = accuracy.win_perc - accuracy.won
-
-            if fo.place_dec:
-                accuracy.place = bool(result) and result.pos <= 3
-                accuracy.place_dec = fo.place_dec
-                accuracy.place_perc = 1 / fo.place_dec
-                accuracy.place_error = accuracy.place_perc - accuracy.place
-
-            if fo.win_dec or fo.place_dec:
-                try:
-                    accuracy.save()
-                except IntegrityError:
-                    logger.warning('Already processed')
-        race.has_processed = True
-        race.save()
-        logger.warning(f'Created accuracy for {race}')
-    logger.warning(f'>>>> Task accuracy finished {len(races)} races')
-    return len(races)
-
-
-@shared_task
-def create_buckets():
-    """buckets the abs errors for betting range values"""
-    df = pd.DataFrame.from_records(Accuracy.objects.all().values())
-    # df['win_error_abs'] = df['win_error']
-    Bucket.objects.all().delete()
-    bins = 0
-    while bins < 12:
-        bins += 1
-        df['bins'] = 1
-        df['cats'] = pd.qcut(df['win_perc'], bins)
-        flag_exit = False
-        for name, grp in df.groupby('cats'):
-
-            # linear regression for coefficients
-            ols = LinearRegression().fit(
-                grp['win_perc'].values.reshape(-1, 1),
-                grp['won'].values.reshape(-1, 1))
-
-            # create bucket from bin group
-            bucket = Bucket.objects.create(
-                bins=bins,
-                left=name.left,
-                right=name.right,
-                total=len(grp),
-                count=grp['won'].sum(),
-                win_mean=grp['won'].mean(),
-                coef=ols.coef_[0],
-                intercept=ols.intercept_,
-            )
-
-            # check flag
-            if bucket.count <= 1:
-                flag_exit = True
-
-        if flag_exit:
-            break
-    logger.warning(f'Created max {bins} TAB buckets')
+def meeting_cleanup():
+    """Delete meeting without any races"""
+    meetings = Meeting.objects.all()
+    for meeting in meetings:
+        if not meeting.race_set.count():
+            logger.info(f'Delete empty meeting {meeting}')
+    logger.warning(f'>>>> Meeting cleanup done on {len(meetings)} objects')

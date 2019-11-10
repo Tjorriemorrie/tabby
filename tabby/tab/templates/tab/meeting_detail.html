@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <p><small><a href="{% url 'meetings' %}">Back to meetings</a></small></p>
+    <h3>{{ object.name }}</h3>
+    <p>Date: {{ object.date }}</p>
+    <table border="1" cellpadding="5">
+    <thead>
+        <tr>
+            <th>No</th>
+            <th>Start time</th>
+            <th>Distance</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Class Conditions</th>
+            <th>Direction</th>
+            <th>Places</th>
+            <th>Results and processed?</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for race in object.race_set.all %}
+            <tr>
+                <td><a href="{% url 'race' pk=race.pk %}">{{ race.number }}</a></td>
+                <td>{{ race.start_time|time:"G:i" }}</td>
+                <td>{{ race.distance }}</td>
+                <td>{{ race.name }}</td>
+                <td>{{ race.status }}</td>
+                <td>{{ race.class_conditions }}</td>
+                <td>{{ race.direction }}</td>
+                <td>{{ race.number_of_places }}</td>
+                <td>{{ race.has_results }} & {{ race.has_processed }}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+    </table>
+{% endblock %}

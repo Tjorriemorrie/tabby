@@ -19,6 +19,16 @@ class RaceManager(models.Manager):
             start_time__lte=timezone.now()
         ).order_by('-start_time')[:limit]
 
+    def handled(self, meeting, results=False, processed=False):
+        """races that have results and processed"""
+        return super().get_queryset().filter(
+            meeting=meeting
+        ).filter(
+            has_results=results
+        ).filter(
+            has_processed=processed
+        )
+
 
 class RunnerManager(models.Manager):
 
@@ -34,29 +44,3 @@ class FixedOddManager(models.Manager):
     def top_10(self):
         """Get last 10 updated odds"""
         return super().get_queryset().all()[:10]
-
-
-class AccuracyManager(models.Manager):
-
-    def avg_win_error(self):
-        """Calculates single overall error average"""
-        return super().get_queryset().all().aggregate(Avg('win_error'))['win_error__avg']
-
-
-class BucketManager(models.Manager):
-
-    def latest_bins(self):
-        """Get biggest number of bins grouping"""
-        max_bins = super().get_queryset().all().aggregate(Max('bins'))['bins__max']
-        return super().get_queryset().filter(
-            bins=max_bins
-        ).order_by('left').all()
-
-    def get_fo(self, fo):
-        """get the bucket that matches the fo"""
-        max_bins = super().get_queryset().all().aggregate(Max('bins'))['bins__max']
-        return super().get_queryset().filter(
-            bins=max_bins,
-            left__lte=fo.win_perc,
-            right__gt=fo.win_perc
-        ).get()
