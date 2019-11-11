@@ -3,7 +3,7 @@ import logging
 from django.db import models
 
 from betfair.models import Market, RunnerBook, Runner as BfRunner
-from .managers import RaceManager, FixedOddManager, RunnerManager
+from .managers import RaceManager, FixedOddManager, RunnerManager, VarManager
 
 logger = logging.getLogger(__name__)
 
@@ -228,3 +228,18 @@ class RunnerMeta(models.Model):
 
     def __str__(self):
         return f'RunnerMeta(race={self.race} runner={self.runner})'
+
+
+class Var(models.Model):
+    objects = VarManager()
+
+    key = models.CharField(max_length=20)
+    val1 = models.FloatField(default=0, blank=True)
+    val2 = models.FloatField(default=0, blank=True)
+    val3 = models.FloatField(null=True, blank=True)
+    val4 = models.FloatField(null=True, blank=True)
+    val5 = models.FloatField(null=True, blank=True)
+    ran_at = models.DateTimeField()
+
+    def __str__(self):
+        return f'Var(key={self.key})'
