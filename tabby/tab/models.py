@@ -101,7 +101,7 @@ class Runner(models.Model):
         ordering = ['barrier_number', 'runner_number']
 
     def __str__(self):
-        return f'<Runner num={self.runner_number} name={self.name}>'
+        return f'Runner(num={self.runner_number} name={self.name})'
 
     def fo(self):
         return self.fixedodd_set.all()[:5]

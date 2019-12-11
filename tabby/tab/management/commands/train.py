@@ -117,8 +117,8 @@ def _train(data, vars, log):
             continue
 
         payout = -bet_amt
-        if row.won:
-            dec_odds = 1 / row.win_odds
+        if row.placed:
+            dec_odds = 1 / row.place_odds
             payout += bet_amt * dec_odds
 
         matches += 1

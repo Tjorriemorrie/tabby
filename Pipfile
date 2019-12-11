@@ -10,9 +10,11 @@ django = "*"
 django-celery-beat = "*"
 django-celery-results = "*"
 celery = {extras = ["django", "redis"],version = "*"}
-requests = "*"
 cma = "*"
 numpy = "*"
+selenium = "*"
+random-user-agent = "*"
+requests = "*"
 
 [requires]
 python_version = "3.7"
