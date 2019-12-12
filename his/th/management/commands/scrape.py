@@ -116,7 +116,6 @@ class Command(BaseCommand):
                 'start_time': datetime(
                     meeting.date.year, meeting.date.month, meeting.date.day,
                     int(hour), int(min), tzinfo=get_current_timezone()),
-                'has_results': True,
             }
         )
         if created:
@@ -292,7 +291,7 @@ class RacePage(BasePage):
             lambda driver: driver.find_element_by_xpath('//header/div/div/div[@class="race-name"]')
         )
         WebDriverWait(self.driver, 10).until(
-            lambda driver: driver.find_element_by_class('race-metadata-list')
+            lambda driver: driver.find_element_by_class_name('race-metadata-list')
         )
 
     @property
@@ -435,10 +434,7 @@ class RacePage(BasePage):
         result['venue'] = self.venue
         result['track_condition'] = self.track_condition
         result['weather_condition'] = self.weather_condition
-        try:
-            result['distance'] = self.distance
-        except ValueError as exc:
-            raise
+        result['distance'] = self.distance
         result['number'] = self.number
         result['href'] = href
         result['time'] = self.time
