@@ -1,5 +1,7 @@
 from django.db import models
 
+from .managers import VarManager
+
 
 class Meeting(models.Model):
     TYPES = (
@@ -35,9 +37,6 @@ class Race(models.Model):
     status = models.CharField(max_length=20, null=True)
     number_of_places = models.IntegerField(null=True)
 
-    has_results = models.BooleanField(default=False)
-    has_processed = models.BooleanField(default=False)
-
     class Meta:
         ordering = ['start_time']
 
@@ -66,9 +65,17 @@ class Runner(models.Model):
     class Meta:
         ordering = ['number']
 
+    def won(self):
+        outcome = self.race.outcome
+        return self == outcome.first
+
+    def placed(self):
+        outcome = self.race.outcome
+        return self in {outcome.first, outcome.second, outcome.third, outcome.fourth}
+
 
 class Outcome(models.Model):
-    race = models.ForeignKey(Race, on_delete=models.CASCADE)
+    race = models.OneToOneField(Race, on_delete=models.CASCADE)
 
     first = models.ForeignKey(Runner, related_name='first', on_delete=models.CASCADE)
     second = models.ForeignKey(Runner, related_name='second', on_delete=models.CASCADE)
@@ -88,4 +95,32 @@ class Outcome(models.Model):
     early_quaddie = models.FloatField(null=True)
 
 
+class RunnerMeta(models.Model):
+    race = models.ForeignKey(Race, on_delete=models.CASCADE)
+    runner = models.OneToOneField(Runner, on_delete=models.CASCADE)
 
+    fixed_win = models.FloatField()
+    fixed_place = models.FloatField()
+    tote_win = models.FloatField()
+    tote_place = models.FloatField()
+
+    won = models.BooleanField()
+    placed = models.BooleanField()
+
+    def __str__(self):
+        return f'RunnerMeta(race={self.race} runner={self.runner})'
+
+
+class Var(models.Model):
+    objects = VarManager()
+
+    key = models.CharField(max_length=20)
+    val1 = models.FloatField(default=0, blank=True)
+    val2 = models.FloatField(default=0, blank=True)
+    val3 = models.FloatField(null=True, blank=True)
+    val4 = models.FloatField(null=True, blank=True)
+    val5 = models.FloatField(null=True, blank=True)
+    ran_at = models.DateTimeField()
+
+    def __str__(self):
+        return f'Var(key={self.key})'
