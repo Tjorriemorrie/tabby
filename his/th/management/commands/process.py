@@ -20,17 +20,21 @@ class Command(BaseCommand):
             try:
                 outcome = race.outcome
             except Outcome.DoesNotExist as exc:
-                self.stdout.write(f'{Race} has no outcome!')
+                self.stdout.write(f'{race} has no outcome!')
                 continue
             for runner in race.runner_set.all():
-                meta = {
-                    'fixed_win': runner.fixed_win,
-                    'fixed_place': runner.fixed_place,
-                    'tote_win': runner.tote_win,
-                    'tote_place': runner.tote_place,
-                    'won': runner.won(),
-                    'placed': runner.placed(),
-                }
+                try:
+                    meta = {
+                        'fixed_win': 1 / runner.fixed_win * 100,
+                        'fixed_place': 1 / runner.fixed_place * 100,
+                        'tote_win': 1 / runner.tote_win * 100,
+                        'tote_place': 1 / runner.tote_place * 100,
+                        'won': runner.won(),
+                        'placed': runner.placed(),
+                    }
+                except ZeroDivisionError as exc:
+                    self.stdout.write(f'{race} has 0 odds for something')
+                    continue
                 runner_meta, created = RunnerMeta.objects.update_or_create(
                     race=race,
                     runner=runner,
